@@ -143,21 +143,29 @@ const bindCurrencyEvents = () => {
     btn.disabled = true;
     btn.textContent = "Refreshing…";
     const base = document.getElementById("setting-base-currency").value;
-    await fetchExchangeRates(base);
+    const result = await fetchExchangeRates(base);
     renderRatesDisplay();
     btn.disabled = false;
     btn.innerHTML = `<i data-lucide="refresh-cw"></i> Refresh Exchange Rates`;
     lucide.createIcons();
-    toast("Exchange rates updated", "success");
+    if (result) {
+      toast("Exchange rates updated", "success");
+    } else {
+      toast("Couldn't reach rate API — using last cached rates", "warning");
+    }
   });
 };
 
 const renderRatesDisplay = () => {
   const el = document.getElementById("rates-display");
   if (!el) return;
-  el.innerHTML = Object.entries(exchangeRates)
-    .filter(([k]) => k !== "INR")
-    .map(([k,v]) => `<span class="rate-chip">1 INR = ${v.toFixed(4)} ${k}</span>`).join("");
+  const updated = ls.get("rates_updated");
+  const updatedText = updated ? `Last updated: ${new Date(updated).toLocaleString()}` : "Using default rates — click refresh";
+  el.innerHTML = `
+    <div class="muted" style="font-size:0.75rem;width:100%;margin-bottom:6px">${updatedText}</div>
+    ${Object.entries(exchangeRates)
+      .filter(([k]) => k !== "INR")
+      .map(([k,v]) => `<span class="rate-chip">1 ${k} = ₹${(1/v).toFixed(2)} &nbsp;|&nbsp; 1 INR = ${v.toFixed(4)} ${k}</span>`).join("")}`;
 };
 
 // ─── DANGER ZONE ──────────────────────────────────────────────
