@@ -161,6 +161,7 @@ const renderCategoriesGrid = () => {
     <div class="category-card" data-id="${c.id}">
       <div class="category-emoji">${c.emoji||"📌"}</div>
       <div class="category-name">${c.name}</div>
+      ${c.subcategories?.length ? `<div class="muted" style="font-size:0.68rem;margin-top:2px">${c.subcategories.length} subcategories</div>` : ""}
     </div>`).join("");
   grid.querySelectorAll(".category-card").forEach(card =>
     card.addEventListener("click", () => openCategoryModal(_categories.find(c=>c.id===card.dataset.id)))
@@ -172,7 +173,9 @@ const openCategoryModal = (category) => {
   const body = `
     <div class="form-row"><label>Category Name</label><input id="cat-name" class="input" value="${category?.name||""}" /></div>
     <div class="form-row"><label>Emoji Icon</label><input id="cat-emoji" class="input" value="${category?.emoji||"📌"}" maxlength="2" /></div>
-    <div class="form-row"><label>Color</label><input type="color" id="cat-color" class="input" value="${category?.color||"#5a6e3a"}" style="height:42px" /></div>`;
+    <div class="form-row"><label>Color</label><input type="color" id="cat-color" class="input" value="${category?.color||"#5a6e3a"}" style="height:42px" /></div>
+    <div class="form-row"><label>Subcategories (comma-separated)</label>
+      <input id="cat-subs" class="input" placeholder="e.g. Groceries, Dining out, Coffee" value="${(category?.subcategories||[]).join(", ")}" /></div>`;
   const footer = `${isEdit?`<button class="btn btn-danger btn-sm" id="cat-delete">Delete</button>`:""}
     <button class="btn btn-ghost" id="cat-cancel">Cancel</button>
     <button class="btn btn-primary" id="cat-save">${isEdit?"Update":"Add"}</button>`;
@@ -192,6 +195,7 @@ const openCategoryModal = (category) => {
       name: document.getElementById("cat-name").value.trim(),
       emoji: document.getElementById("cat-emoji").value.trim(),
       color: document.getElementById("cat-color").value,
+      subcategories: document.getElementById("cat-subs").value.split(",").map(s=>s.trim()).filter(Boolean),
     };
     await saveCategory(category?.id||null, data);
     toast(isEdit?"Category updated":"Category added","success");
@@ -211,16 +215,17 @@ const renderBudgets = () => {
     return;
   }
   list.innerHTML = _budgets.map(b => {
-    const spent = _transactions
-      .filter(t => t.type==="expense" && t.categoryId===b.categoryId)
-      .reduce((s,t)=>s+(t.amountINR||t.amount||0),0);
+    const spent = b.categoryId
+      ? _transactions.filter(t => t.type==="expense" && t.categoryId===b.categoryId).reduce((s,t)=>s+(t.amountINR||t.amount||0),0)
+      : 0;
     const percent = Math.min(100, pct(spent, b.amount));
     const cls = percent >= 100 ? "danger" : percent >= 80 ? "warning" : "";
     const cat = _categories.find(c=>c.id===b.categoryId);
+    const label = b.name || cat?.name || "Budget";
     return `
       <div class="budget-item" data-id="${b.id}">
         <div class="budget-header">
-          <span class="budget-name">${cat?.emoji||"📌"} ${cat?.name||b.name||"Budget"}</span>
+          <span class="budget-name">${cat?.emoji||"📌"} ${label}</span>
           <span class="budget-amounts">${formatCurrency(spent)} / ${formatCurrency(b.amount)}</span>
         </div>
         <div class="progress-bar-wrap"><div class="progress-bar ${cls}" style="width:${percent}%"></div></div>
@@ -235,8 +240,11 @@ const renderBudgets = () => {
 const openBudgetModal = (budget) => {
   const isEdit = !!budget;
   const body = `
-    <div class="form-row"><label>Category</label>
+    <div class="form-row"><label>Budget Name</label>
+      <input id="bud-name" class="input" placeholder="e.g. Weekend Spending, Trip to Dubai" value="${budget?.name||""}" /></div>
+    <div class="form-row"><label>Category (optional — leave blank for a custom budget not tied to one category)</label>
       <select id="bud-category" class="input">
+        <option value="">No category (custom)</option>
         ${_categories.map(c=>`<option value="${c.id}" ${budget?.categoryId===c.id?"selected":""}>${c.emoji} ${c.name}</option>`).join("")}
       </select>
     </div>
@@ -264,6 +272,7 @@ const openBudgetModal = (budget) => {
   };
   document.getElementById("bud-save").onclick = async () => {
     const data = {
+      name: document.getElementById("bud-name").value.trim(),
       categoryId: document.getElementById("bud-category").value,
       amount: parseFloat(document.getElementById("bud-amount").value)||0,
       period: document.getElementById("bud-period").value,
