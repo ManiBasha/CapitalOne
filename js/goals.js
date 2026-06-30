@@ -41,15 +41,15 @@ const renderGoalsGrid = () => {
           </div>
         </div>
         <div class="goal-amounts">
-          <div class="goal-current">${formatCurrency(g.currentAmount||0, "INR", true)}</div>
-          <div class="goal-target">of ${formatCurrency(g.targetAmount||0, "INR", true)}</div>
+          <div class="goal-current">${formatCurrency(g.currentAmount||0, g.currency||"INR", true)}</div>
+          <div class="goal-target">of ${formatCurrency(g.targetAmount||0, g.currency||"INR", true)}</div>
         </div>
         <div class="progress-bar-wrap"><div class="progress-bar" style="width:${Math.min(100,progress)}%"></div></div>
         <div class="goal-meta">
           <span>${progress.toFixed(0)}% complete</span>
           <span>${monthsLeft>0?monthsLeft+' months left':'Due'}</span>
         </div>
-        ${monthlyReq > 0 ? `<div class="muted" style="font-size:0.78rem;margin-top:6px">Required SIP: ${formatCurrency(monthlyReq, "INR", true)}/mo</div>` : ""}
+        ${monthlyReq > 0 ? `<div class="muted" style="font-size:0.78rem;margin-top:6px">Required SIP: ${formatCurrency(monthlyReq, g.currency||"INR", true)}/mo</div>` : ""}
         <div class="goal-actions">
           <button class="btn btn-ghost btn-sm" data-edit="${g.id}">Edit</button>
           <button class="btn btn-outline btn-sm" data-contribute="${g.id}">Add Funds</button>
@@ -76,8 +76,11 @@ export const openGoalModal = (goal) => {
     </div>
     <div class="form-row"><label>Goal Name</label><input id="g-name" class="input" value="${goal?.name||""}" placeholder="e.g. Dream Home" /></div>
     <div class="form-row-inline">
-      <div class="form-row"><label>Target Amount (₹)</label><input type="number" id="g-target" class="input" value="${goal?.targetAmount||""}" /></div>
-      <div class="form-row"><label>Current Amount (₹)</label><input type="number" id="g-current" class="input" value="${goal?.currentAmount||0}" /></div>
+      <div class="form-row"><label>Target Amount</label><input type="number" id="g-target" class="input" value="${goal?.targetAmount||""}" /></div>
+      <div class="form-row"><label>Current Amount</label><input type="number" id="g-current" class="input" value="${goal?.currentAmount||0}" /></div>
+    </div>
+    <div class="form-row"><label>Currency</label>
+      <select id="g-currency" class="input">${["INR","SAR","USD","AED","GBP","EUR"].map(c=>`<option ${goal?.currency===c?"selected":""}>${c}</option>`).join("")}</select>
     </div>
     <div class="form-row"><label>Target Date</label><input type="date" id="g-date" class="input" value="${goal?.targetDate||""}" /></div>`;
   const footer = `${isEdit?`<button class="btn btn-danger btn-sm" id="g-delete">Delete</button>`:""}
@@ -100,6 +103,7 @@ export const openGoalModal = (goal) => {
       name: document.getElementById("g-name").value.trim(),
       targetAmount: parseFloat(document.getElementById("g-target").value)||0,
       currentAmount: parseFloat(document.getElementById("g-current").value)||0,
+      currency: document.getElementById("g-currency").value,
       targetDate: document.getElementById("g-date").value,
     };
     await saveGoal(goal?.id||null, data);
@@ -113,8 +117,8 @@ export const openGoalModal = (goal) => {
 
 const openContributeModal = (goal) => {
   const body = `
-    <div class="form-row"><label>Add Amount (₹)</label><input type="number" id="c-amount" class="input" placeholder="0" /></div>
-    <p class="muted" style="font-size:0.82rem">Current: ${formatCurrency(goal.currentAmount||0)} / ${formatCurrency(goal.targetAmount)}</p>`;
+    <div class="form-row"><label>Add Amount (${goal.currency||"INR"})</label><input type="number" id="c-amount" class="input" placeholder="0" /></div>
+    <p class="muted" style="font-size:0.82rem">Current: ${formatCurrency(goal.currentAmount||0, goal.currency||"INR")} / ${formatCurrency(goal.targetAmount, goal.currency||"INR")}</p>`;
   const footer = `<button class="btn btn-ghost" id="c-cancel">Cancel</button><button class="btn btn-primary" id="c-save">Add</button>`;
   openModal("Add Funds to " + goal.name, body, footer);
   document.getElementById("c-cancel").onclick = closeModal;
