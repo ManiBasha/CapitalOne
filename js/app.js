@@ -4,7 +4,7 @@
 import { auth, onAuth, loginWithGoogle, loginAnonymously, logout } from "./firebase.js";
 import { getProfile } from "./database.js";
 import { initSetup } from "./setup.js";
-import { initTransactions, loadTransactions, openAddModal, calcCashFlow, renderTransactionList } from "./transactions.js";
+import { initTransactions, loadTransactions, openAddModal, calcCashFlow, renderTransactionList, refreshAccountsAndCategories } from "./transactions.js";
 import { initInvestments, getInvestmentsData, aggregateInvestments, openInvModal } from "./investments.js";
 import { initWealth, getWealthData } from "./wealth.js";
 import { initMoney, refreshMoneyPage, getAccountsData, getCategoriesData } from "./money.js";
@@ -159,6 +159,7 @@ const initApp = async () => {
   bindFAB();
 
   // Init all modules
+  await initTransactions();
   await initMoney();
   await initInvestments();
   await initWealth();
