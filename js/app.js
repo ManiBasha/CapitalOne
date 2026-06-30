@@ -58,7 +58,16 @@ onAuth(async (user) => {
 });
 
 const proceedToApp = async () => {
-  const profile = await getProfile();
+  let profile;
+  try {
+    profile = await getProfile();
+  } catch (err) {
+    console.error("Failed to load profile:", err);
+    toast("Couldn't connect to the database. Check Firestore rules are published, then reload.", "error");
+    document.getElementById("auth-screen").classList.remove("hidden");
+    return;
+  }
+
   if (!profile || !profile.setupDone) {
     document.getElementById("setup-screen").classList.remove("hidden");
     initSetup();
