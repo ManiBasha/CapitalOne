@@ -6,11 +6,11 @@
 // Exchange rates cache (updated at runtime)
 export let exchangeRates = {
   INR: 1,
-  SAR: 0.044,   // 1 INR ≈ 0.044 SAR
-  USD: 0.012,   // 1 INR ≈ 0.012 USD
-  AED: 0.044,
-  GBP: 0.0096,
-  EUR: 0.011
+  SAR: 0.0425,  // 1 INR ≈ 0.0425 SAR (~23.5 INR per SAR)
+  USD: 0.0106,  // 1 INR ≈ 0.0106 USD (~94 INR per USD)
+  AED: 0.0390,
+  GBP: 0.0084,
+  EUR: 0.0098
 };
 
 export const setExchangeRates = (rates) => {
@@ -136,20 +136,26 @@ export const DEFAULT_CATEGORIES = [
   { name: "Other",           emoji: "📌", color: "#6b7280" },
 ];
 
-// ─── FETCH EXCHANGE RATES (Free API) ─────────────────────────
-// Uses exchangerate.host (free, no API key needed)
+// ─── FETCH EXCHANGE RATES (Free, keyless API) ────────────────
+// Uses open.er-api.com — free, no API key, updates daily
 export const fetchExchangeRates = async (base = "INR") => {
   try {
-    const res = await fetch(`https://api.exchangerate.host/latest?base=${base}&symbols=SAR,USD,AED,GBP,EUR,INR`);
+    const res = await fetch(`https://open.er-api.com/v6/latest/${base}`);
+    if (!res.ok) throw new Error(`Rate API responded ${res.status}`);
     const data = await res.json();
-    if (data.rates) {
-      setExchangeRates(data.rates);
-      ls.set("exchange_rates", data.rates);
+    if (data.result === "success" && data.rates) {
+      const picked = {};
+      ["INR","SAR","USD","AED","GBP","EUR"].forEach(c => {
+        if (data.rates[c] !== undefined) picked[c] = data.rates[c];
+      });
+      setExchangeRates(picked);
+      ls.set("exchange_rates", picked);
       ls.set("rates_updated", Date.now());
-      return data.rates;
+      return picked;
     }
+    throw new Error("Unexpected rate API response shape");
   } catch (e) {
-    // fall back to cached rates
+    console.warn("Exchange rate fetch failed, using cached/fallback rates:", e.message);
     const cached = ls.get("exchange_rates");
     if (cached) setExchangeRates(cached);
   }
