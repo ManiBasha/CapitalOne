@@ -12,17 +12,24 @@ let _accounts     = [];
 let _categories   = [];
 let _page         = 1;
 const PAGE_SIZE   = 30;
+let _filtersBound = false;
 
 export const initTransactions = async () => {
+  await refreshAccountsAndCategories();
+};
+
+export const refreshAccountsAndCategories = async () => {
   _accounts   = await getAccounts();
   _categories = await getCategories();
-  bindFilterEvents();
+  populateAccountFilter();
+  populateCategoryFilter();
 };
 
 export const loadTransactions = async (filters = {}) => {
+  await refreshAccountsAndCategories();
   _transactions = await getTransactions(filters);
   renderTransactionList(_transactions);
-  populateAccountFilter();
+  bindFilterEvents();
   return _transactions;
 };
 
@@ -143,6 +150,14 @@ const openTxnModal = (txn) => {
       </select>
     </div>
     <div class="form-row">
+      <label>Subcategory</label>
+      <select id="m-subcategory" class="input">
+        <option value="">None</option>
+        ${(cats.find(c=>c.id===txn?.categoryId)?.subcategories||[]).map(sc=>
+          `<option value="${sc}" ${txn?.subcategory===sc?"selected":""}>${sc}</option>`).join("")}
+      </select>
+    </div>
+    <div class="form-row">
       <label>Title</label>
       <input type="text" id="m-title" class="input" placeholder="e.g. Grocery shopping" value="${txn?.title||""}" />
     </div>
@@ -174,6 +189,13 @@ const openTxnModal = (txn) => {
   document.getElementById("m-cancel").onclick = closeModal;
   if (isEdit) document.getElementById("m-delete").onclick = () => confirmDelete(txn.id);
   document.getElementById("m-save").onclick = () => saveTxn(txn?.id);
+
+  document.getElementById("m-category").onchange = (e) => {
+    const cat = cats.find(c => c.id === e.target.value);
+    const subSel = document.getElementById("m-subcategory");
+    subSel.innerHTML = `<option value="">None</option>` +
+      (cat?.subcategories||[]).map(sc=>`<option value="${sc}">${sc}</option>`).join("");
+  };
 };
 
 const saveTxn = async (editId) => {
@@ -184,6 +206,7 @@ const saveTxn = async (editId) => {
     type:          document.getElementById("m-type").value,
     accountId:     document.getElementById("m-account").value,
     categoryId:    document.getElementById("m-category").value,
+    subcategory:   document.getElementById("m-subcategory").value,
     title:         document.getElementById("m-title").value.trim(),
     notes:         document.getElementById("m-notes").value.trim(),
     tags:          document.getElementById("m-tags").value.split(",").map(t=>t.trim()).filter(Boolean),
@@ -220,18 +243,23 @@ const confirmDelete = async (id) => {
 
 // ─── FILTERS ─────────────────────────────────────────────────
 const bindFilterEvents = () => {
+  if (_filtersBound) return;
+  _filtersBound = true;
+
   const applyFilters = () => {
-    const from    = document.getElementById("txn-filter-from")?.value;
-    const to      = document.getElementById("txn-filter-to")?.value;
-    const type    = document.getElementById("txn-filter-type")?.value;
-    const account = document.getElementById("txn-filter-account")?.value;
-    const search  = (document.getElementById("txn-search")?.value||"").toLowerCase();
+    const from     = document.getElementById("txn-filter-from")?.value;
+    const to       = document.getElementById("txn-filter-to")?.value;
+    const type     = document.getElementById("txn-filter-type")?.value;
+    const account  = document.getElementById("txn-filter-account")?.value;
+    const category = document.getElementById("txn-filter-category")?.value;
+    const search   = (document.getElementById("txn-search")?.value||"").toLowerCase();
 
     let filtered = _transactions;
     if (from) filtered = filtered.filter(t => t.date >= from);
     if (to)   filtered = filtered.filter(t => t.date <= to);
     if (type) filtered = filtered.filter(t => t.type === type);
     if (account) filtered = filtered.filter(t => t.accountId === account);
+    if (category) filtered = filtered.filter(t => t.categoryId === category);
     if (search) filtered = filtered.filter(t =>
       (t.title||"").toLowerCase().includes(search) ||
       (t.notes||"").toLowerCase().includes(search)
@@ -241,7 +269,7 @@ const bindFilterEvents = () => {
     renderTransactionList(filtered);
   };
 
-  ["txn-filter-from","txn-filter-to","txn-filter-type","txn-filter-account","txn-search"].forEach(id => {
+  ["txn-filter-from","txn-filter-to","txn-filter-type","txn-filter-account","txn-filter-category","txn-search"].forEach(id => {
     document.getElementById(id)?.addEventListener("input", applyFilters);
     document.getElementById(id)?.addEventListener("change", applyFilters);
   });
@@ -253,6 +281,15 @@ const populateAccountFilter = () => {
   const cur = sel.value;
   sel.innerHTML = `<option value="">All Accounts</option>` +
     _accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join("");
+  sel.value = cur;
+};
+
+const populateCategoryFilter = () => {
+  const sel = document.getElementById("txn-filter-category");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">All Categories</option>` +
+    _categories.map(c=>`<option value="${c.id}">${c.emoji||""} ${c.name}</option>`).join("");
   sel.value = cur;
 };
 
