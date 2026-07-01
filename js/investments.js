@@ -1,45 +1,92 @@
 // ============================================================
-// js/investments.js  – Investments CRUD & rendering
+// js/investments.js – Investments CRUD, Sells, Realized/Unrealized P&L
 // ============================================================
-import { saveInvestment, getInvestments, deleteInvestment } from "./database.js";
+import {
+  saveInvestment, getInvestments, deleteInvestment,
+  addSellTrade, getSellTrades, deleteSellTrade
+} from "./database.js";
 import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal, pct } from "./utils.js";
 import { renderInvCharts } from "./charts.js";
 
-let _investments = [];
+let _investments = [];                 // open + partially-sold holdings
+let _allSells    = {};                 // { investmentId: [sell, ...] }
 
 export const initInvestments = async () => {
   _investments = await getInvestments();
+  // Load sell trades for every holding (parallel)
+  const sellResults = await Promise.all(
+    _investments.map(inv => getSellTrades(inv.id).then(sells => ({ id: inv.id, sells })))
+  );
+  _allSells = {};
+  sellResults.forEach(r => { _allSells[r.id] = r.sells; });
   renderInvestmentsPage();
 };
 
 export const getInvestmentsData = () => _investments;
 
-// ─── RENDER PAGE ─────────────────────────────────────────────
+// ─── P&L HELPERS ──────────────────────────────────────────────
+// Realized P&L for one holding = Σ (sellPrice - avgPrice) * sellQty
+const realizedForHolding = (inv) => {
+  const sells = _allSells[inv.id] || [];
+  return sells.reduce((s, sell) => s + (sell.sellPrice - inv.avgPrice) * sell.quantity, 0);
+};
+
+// Remaining open quantity after all sells
+const openQty = (inv) => {
+  const sells = _allSells[inv.id] || [];
+  const soldQty = sells.reduce((s, sell) => s + sell.quantity, 0);
+  return Math.max(0, (inv.quantity || 0) - soldQty);
+};
+
+// Unrealized P&L = (currentPrice - avgPrice) * openQty
+const unrealizedForHolding = (inv) => {
+  const qty = openQty(inv);
+  return ((inv.currentPrice || inv.avgPrice) - inv.avgPrice) * qty;
+};
+
+// ─── PAGE AGGREGATES ──────────────────────────────────────────
+export const aggregateInvestments = (invs) => {
+  let totalInvested = 0, currentValue = 0, realized = 0, unrealized = 0;
+  for (const inv of invs) {
+    const oQty = openQty(inv);
+    totalInvested += (inv.avgPrice * inv.quantity) || 0;
+    currentValue  += (inv.currentPrice || inv.avgPrice) * oQty;
+    realized      += realizedForHolding(inv);
+    unrealized    += unrealizedForHolding(inv);
+  }
+  return { totalInvested, currentValue, realized, unrealized };
+};
+
+// ─── RENDER PAGE ──────────────────────────────────────────────
 export const renderInvestmentsPage = () => {
-  const data = aggregateInvestments(_investments);
+  const agg = aggregateInvestments(_investments);
 
-  document.getElementById("inv-total-invested").textContent = formatCurrency(data.totalInvested, "INR", true);
-  document.getElementById("inv-total-value").textContent    = formatCurrency(data.currentValue,  "INR", true);
-  document.getElementById("inv-total-profit").textContent   = formatCurrency(data.gain,           "INR", true);
-  document.getElementById("inv-unrealized").textContent     = formatCurrency(data.unrealized,     "INR", true);
+  document.getElementById("inv-total-invested").textContent = formatCurrency(agg.totalInvested, "INR", true);
+  document.getElementById("inv-total-value").textContent    = formatCurrency(agg.currentValue,  "INR", true);
 
-  // Charts
-  renderInvCharts(_investments);
+  const realEl = document.getElementById("inv-realized");
+  realEl.textContent = (agg.realized >= 0 ? "+" : "") + formatCurrency(agg.realized, "INR", true);
+  realEl.className = "card-value " + (agg.realized >= 0 ? "positive" : "negative");
 
-  // Table by active tab
+  const unrEl = document.getElementById("inv-unrealized");
+  unrEl.textContent = (agg.unrealized >= 0 ? "+" : "") + formatCurrency(agg.unrealized, "INR", true);
+  unrEl.className = "card-value " + (agg.unrealized >= 0 ? "positive" : "negative");
+
+  renderInvCharts(_investments, _allSells);
+
   const activeTab = document.querySelector("#inv-tabs .tab.active")?.dataset.tab || "equity";
   renderInvTable(activeTab);
 
-  // Tab events
   document.querySelectorAll("#inv-tabs .tab").forEach(tab => {
     tab.onclick = () => {
-      document.querySelectorAll("#inv-tabs .tab").forEach(t=>t.classList.remove("active"));
+      document.querySelectorAll("#inv-tabs .tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
       renderInvTable(tab.dataset.tab);
     };
   });
 };
 
+// ─── INVESTMENT TABLE ─────────────────────────────────────────
 const TYPE_MAP = {
   "equity":       ["equity","stocks"],
   "mutual-funds": ["mutual fund","mf","etf"],
@@ -65,21 +112,35 @@ const renderInvTable = (tab) => {
   }
 
   const rows = filtered.map(inv => {
-    const gain    = (inv.currentPrice * inv.quantity) - (inv.avgPrice * inv.quantity);
-    const gainPct = pct(gain, inv.avgPrice * inv.quantity);
-    const gainCls = gain >= 0 ? "positive" : "negative";
+    const oQty       = openQty(inv);
+    const invested   = inv.avgPrice * inv.quantity;
+    const curVal     = (inv.currentPrice || inv.avgPrice) * oQty;
+    const unreal     = unrealizedForHolding(inv);
+    const real       = realizedForHolding(inv);
+    const unrCls     = unreal >= 0 ? "positive" : "negative";
+    const realCls    = real  >= 0 ? "positive" : "negative";
+    const sells      = _allSells[inv.id] || [];
+    const soldQty    = sells.reduce((s, sl) => s + sl.quantity, 0);
+
     return `
       <tr data-id="${inv.id}">
-        <td><strong>${inv.name}</strong><div class="muted" style="font-size:0.72rem">${inv.broker||""}</div></td>
-        <td>${inv.quantity}</td>
+        <td>
+          <strong>${inv.name}</strong>
+          <div class="muted" style="font-size:0.72rem">${inv.broker||""} · ${inv.sector||""}</div>
+        </td>
+        <td>
+          <span title="Open qty">${oQty}</span>
+          ${soldQty > 0 ? `<div class="muted" style="font-size:0.7rem">${soldQty} sold</div>` : ""}
+        </td>
         <td>${formatCurrency(inv.avgPrice, inv.currency||"INR")}</td>
         <td>${formatCurrency(inv.currentPrice||inv.avgPrice, inv.currency||"INR")}</td>
-        <td>${formatCurrency(inv.avgPrice*inv.quantity, inv.currency||"INR")}</td>
-        <td>${formatCurrency((inv.currentPrice||inv.avgPrice)*inv.quantity, inv.currency||"INR")}</td>
-        <td class="${gainCls}">${gain>=0?"+":""}${formatCurrency(gain, inv.currency||"INR")}</td>
-        <td class="${gainCls}">${gainPct.toFixed(2)}%</td>
+        <td>${formatCurrency(invested, inv.currency||"INR")}</td>
+        <td>${formatCurrency(curVal, inv.currency||"INR")}</td>
+        <td class="${unrCls}">${unreal>=0?"+":""}${formatCurrency(unreal, inv.currency||"INR")}</td>
+        <td class="${realCls}">${real>=0?"+":""}${formatCurrency(real, inv.currency||"INR")}</td>
         <td>
-          <button class="btn btn-ghost btn-sm inv-edit" data-id="${inv.id}">Edit</button>
+          <button class="btn btn-ghost btn-sm inv-edit"  data-id="${inv.id}">Edit</button>
+          ${oQty > 0 ? `<button class="btn btn-outline btn-sm inv-sell" data-id="${inv.id}">Sell</button>` : ""}
           <button class="btn btn-danger btn-sm inv-del"  data-id="${inv.id}">Del</button>
         </td>
       </tr>`;
@@ -90,8 +151,15 @@ const renderInvTable = (tab) => {
       <table class="inv-table">
         <thead>
           <tr>
-            <th>Name / Broker</th><th>Qty</th><th>Avg Price</th><th>Current</th>
-            <th>Invested</th><th>Current Value</th><th>P&L</th><th>%</th><th></th>
+            <th>Name / Broker</th>
+            <th>Qty (Open)</th>
+            <th>Avg Buy</th>
+            <th>Current</th>
+            <th>Total Invested</th>
+            <th>Current Value</th>
+            <th>Unrealized P&amp;L</th>
+            <th>Realized P&amp;L</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -99,29 +167,126 @@ const renderInvTable = (tab) => {
     </div>`;
 
   container.querySelectorAll(".inv-edit").forEach(btn =>
-    btn.onclick = () => openInvModal(_investments.find(i=>i.id===btn.dataset.id))
+    btn.onclick = () => openInvModal(_investments.find(i => i.id === btn.dataset.id))
+  );
+  container.querySelectorAll(".inv-sell").forEach(btn =>
+    btn.onclick = () => openSellModal(_investments.find(i => i.id === btn.dataset.id))
   );
   container.querySelectorAll(".inv-del").forEach(btn =>
     btn.onclick = () => confirmDeleteInv(btn.dataset.id)
   );
 };
 
-// ─── AGGREGATES ───────────────────────────────────────────────
-export const aggregateInvestments = (invs) => {
-  let totalInvested = 0, currentValue = 0;
-  for (const inv of invs) {
-    totalInvested += (inv.avgPrice * inv.quantity) || 0;
-    currentValue  += ((inv.currentPrice || inv.avgPrice) * inv.quantity) || 0;
-  }
-  return {
-    totalInvested,
-    currentValue,
-    gain:       currentValue - totalInvested,
-    unrealized: currentValue - totalInvested,
+// ─── SELL MODAL ───────────────────────────────────────────────
+const openSellModal = (inv) => {
+  if (!inv) return;
+  const available = openQty(inv);
+  const sells     = _allSells[inv.id] || [];
+
+  const sellHistoryHTML = sells.length === 0 ? "" : `
+    <div class="section-title small" style="margin-top:1rem">Sell History</div>
+    <table class="inv-table" style="margin-top:0.5rem">
+      <thead><tr><th>Date</th><th>Qty</th><th>Sell Price</th><th>Realized P&L</th><th></th></tr></thead>
+      <tbody>
+        ${sells.map(sl => {
+          const pnl = (sl.sellPrice - inv.avgPrice) * sl.quantity;
+          const cls = pnl >= 0 ? "positive" : "negative";
+          return `<tr>
+            <td>${formatDate(sl.sellDate)}</td>
+            <td>${sl.quantity}</td>
+            <td>${formatCurrency(sl.sellPrice, inv.currency||"INR")}</td>
+            <td class="${cls}">${pnl>=0?"+":""}${formatCurrency(pnl, inv.currency||"INR")}</td>
+            <td><button class="btn btn-danger btn-sm" data-del-sell="${sl.id}">×</button></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+
+  const body = `
+    <div class="muted" style="font-size:0.85rem;margin-bottom:var(--sp-md)">
+      <strong>${inv.name}</strong> &nbsp;·&nbsp; Avg buy: ${formatCurrency(inv.avgPrice, inv.currency||"INR")} &nbsp;·&nbsp; Available qty: <strong>${available}</strong>
+    </div>
+    <div class="form-row">
+      <label>Quantity to Sell</label>
+      <input type="number" id="sell-qty" class="input" placeholder="0" max="${available}" step="0.001" />
+    </div>
+    <div class="form-row">
+      <label>Sell Price (per unit)</label>
+      <input type="number" id="sell-price" class="input" placeholder="0.00" step="0.01" />
+    </div>
+    <div class="form-row">
+      <label>Sell Date</label>
+      <input type="date" id="sell-date" class="input" value="${todayISO()}" />
+    </div>
+    <div class="form-row">
+      <label>Notes (optional)</label>
+      <input type="text" id="sell-notes" class="input" placeholder="e.g. Partial profit booking" />
+    </div>
+    <div id="sell-pnl-preview" style="margin-top:var(--sp-sm)"></div>
+    ${sellHistoryHTML}`;
+
+  const footer = `
+    <button class="btn btn-ghost" id="sell-cancel">Cancel</button>
+    <button class="btn btn-primary" id="sell-confirm">Record Sale</button>`;
+
+  openModal(`Sell — ${inv.name}`, body, footer);
+
+  // Live P&L preview
+  const updatePreview = () => {
+    const qty   = parseFloat(document.getElementById("sell-qty")?.value) || 0;
+    const price = parseFloat(document.getElementById("sell-price")?.value) || 0;
+    const el    = document.getElementById("sell-pnl-preview");
+    if (!el || qty <= 0 || price <= 0) { if(el) el.innerHTML = ""; return; }
+    const pnl = (price - inv.avgPrice) * qty;
+    const cls = pnl >= 0 ? "positive" : "negative";
+    el.innerHTML = `<div class="tax-highlight">
+      Estimated Realized P&L: <strong class="${cls}">${pnl>=0?"+":""}${formatCurrency(pnl, inv.currency||"INR")}</strong>
+      &nbsp;·&nbsp; Proceeds: ${formatCurrency(price * qty, inv.currency||"INR")}
+    </div>`;
+  };
+  document.getElementById("sell-qty")?.addEventListener("input", updatePreview);
+  document.getElementById("sell-price")?.addEventListener("input", updatePreview);
+
+  // Delete sell trade buttons in history
+  document.querySelectorAll("[data-del-sell]").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm("Delete this sell record?")) return;
+      await deleteSellTrade(inv.id, btn.dataset.delSell);
+      _allSells[inv.id] = await getSellTrades(inv.id);
+      toast("Sell record deleted");
+      closeModal();
+      renderInvestmentsPage();
+      window.dispatchEvent(new Event("data:changed"));
+    };
+  });
+
+  document.getElementById("sell-cancel").onclick = closeModal;
+  document.getElementById("sell-confirm").onclick = async () => {
+    const qty      = parseFloat(document.getElementById("sell-qty").value) || 0;
+    const price    = parseFloat(document.getElementById("sell-price").value) || 0;
+    const sellDate = document.getElementById("sell-date").value;
+    const notes    = document.getElementById("sell-notes").value.trim();
+
+    if (qty <= 0) { toast("Enter quantity to sell", "error"); return; }
+    if (qty > available) { toast(`Only ${available} units available`, "error"); return; }
+    if (price <= 0)  { toast("Enter a valid sell price", "error"); return; }
+
+    await addSellTrade(inv.id, { quantity: qty, sellPrice: price, sellDate, notes });
+
+    // If all units sold, mark holding as fully exited (keep for history)
+    if (qty >= available) {
+      await saveInvestment(inv.id, { fullyExited: true, exitDate: sellDate });
+    }
+
+    toast("Sale recorded", "success");
+    closeModal();
+    _allSells[inv.id] = await getSellTrades(inv.id);
+    renderInvestmentsPage();
+    window.dispatchEvent(new Event("data:changed"));
   };
 };
 
-// ─── ADD / EDIT MODAL ────────────────────────────────────────
+// ─── ADD / EDIT MODAL ─────────────────────────────────────────
 export const openInvModal = (inv) => {
   const isEdit = !!inv;
   const ASSET_TYPES = ["Equity","Mutual Fund","ETF","Gold","Crypto","FD","PPF","EPF","NPS","Real Estate","Cash"];
@@ -130,7 +295,7 @@ export const openInvModal = (inv) => {
     <div class="form-row">
       <label>Asset Type</label>
       <select id="inv-m-type" class="input">
-        ${ASSET_TYPES.map(t=>`<option value="${t}" ${inv?.assetType===t?"selected":""}>${t}</option>`).join("")}
+        ${ASSET_TYPES.map(t => `<option value="${t}" ${inv?.assetType===t?"selected":""}>${t}</option>`).join("")}
       </select>
     </div>
     <div class="form-row">
@@ -143,13 +308,13 @@ export const openInvModal = (inv) => {
     </div>
     <div class="form-row-inline">
       <div class="form-row">
-        <label>Quantity</label>
+        <label>Total Quantity Bought</label>
         <input type="number" id="inv-m-qty" class="input" placeholder="0" value="${inv?.quantity||""}" step="0.001" />
       </div>
       <div class="form-row">
         <label>Currency</label>
         <select id="inv-m-currency" class="input">
-          ${["INR","SAR","USD"].map(c=>`<option value="${c}" ${inv?.currency===c?"selected":""}>${c}</option>`).join("")}
+          ${["INR","SAR","USD","AED","GBP","EUR"].map(c => `<option value="${c}" ${inv?.currency===c?"selected":""}>${c}</option>`).join("")}
         </select>
       </div>
     </div>
@@ -183,7 +348,7 @@ export const openInvModal = (inv) => {
   const footer = `
     ${isEdit ? `<button class="btn btn-danger btn-sm" id="inv-m-delete">Delete</button>` : ""}
     <button class="btn btn-ghost" id="inv-m-cancel">Cancel</button>
-    <button class="btn btn-primary" id="inv-m-save">${isEdit?"Update":"Add"}</button>`;
+    <button class="btn btn-primary" id="inv-m-save">${isEdit ? "Update" : "Add"}</button>`;
 
   openModal(isEdit ? "Edit Investment" : "Add Investment", body, footer);
 
@@ -208,23 +373,30 @@ const saveInv = async (editId) => {
   };
 
   try {
-    await saveInvestment(editId||null, data);
+    await saveInvestment(editId || null, data);
     toast(editId ? "Investment updated" : "Investment added", "success");
     closeModal();
     _investments = await getInvestments();
+    const sellResults = await Promise.all(
+      _investments.map(inv => getSellTrades(inv.id).then(sells => ({ id: inv.id, sells })))
+    );
+    _allSells = {};
+    sellResults.forEach(r => { _allSells[r.id] = r.sells; });
     renderInvestmentsPage();
     window.dispatchEvent(new Event("data:changed"));
-  } catch(err) {
-    toast("Error saving investment","error"); console.error(err);
+  } catch (err) {
+    toast("Error saving investment", "error");
+    console.error(err);
   }
 };
 
 const confirmDeleteInv = async (id) => {
-  if (!confirm("Delete this investment?")) return;
+  if (!confirm("Delete this investment and all its sell records?")) return;
   await deleteInvestment(id);
   toast("Investment deleted");
   closeModal();
   _investments = await getInvestments();
+  delete _allSells[id];
   renderInvestmentsPage();
   window.dispatchEvent(new Event("data:changed"));
 };
