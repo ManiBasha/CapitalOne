@@ -116,6 +116,22 @@ export const getInvestments = async () => {
 
 export const deleteInvestment = async (id) => deleteDoc(userDoc(uid(), "investments", id));
 
+// ─── SELL TRADES (stored as sub-docs under each investment) ──
+export const addSellTrade = async (investmentId, sell) => {
+  const ref = doc(collection(db, "users", uid(), "investments", investmentId, "sells"));
+  await setDoc(ref, { ...sell, createdAt: serverTimestamp() });
+  return ref.id;
+};
+
+export const getSellTrades = async (investmentId) => {
+  const snap = await getDocs(collection(db, "users", uid(), "investments", investmentId, "sells"));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const deleteSellTrade = async (investmentId, sellId) => {
+  await deleteDoc(doc(db, "users", uid(), "investments", investmentId, "sells", sellId));
+};
+
 // ─── GOALS ────────────────────────────────────────────────────
 export const saveGoal = async (id, data) => {
   const ref = id ? userDoc(uid(), "goals", id) : doc(userCol(uid(), "goals"));
@@ -160,7 +176,15 @@ export const exportAllData = async () => {
   const data = {};
   for (const col of collections) {
     const snap = await getDocs(collection(db, "users", u, col));
-    data[col] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Also export sell trades for each investment
+    if (col === "investments") {
+      for (const inv of docs) {
+        const sellsSnap = await getDocs(collection(db, "users", u, "investments", inv.id, "sells"));
+        inv._sells = sellsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    }
+    data[col] = docs;
   }
   const profileSnap = await getDoc(profileDoc(u));
   data.profile = profileSnap.exists() ? profileSnap.data() : {};
