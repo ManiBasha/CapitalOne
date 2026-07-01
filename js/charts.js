@@ -102,57 +102,109 @@ export const renderNWTimeline = (history) => {
   });
 };
 
-// ─── INVESTMENT ALLOCATION ────────────────────────────────────
-export const renderInvCharts = (investments) => {
-  // Asset type breakdown
+// ─── INVESTMENT CHARTS ────────────────────────────────────────
+export const renderInvCharts = (investments, allSells = {}) => {
+
+  // ── Allocation doughnut ──────────────────────────────────────
   const invCtx = document.getElementById("chart-inv-alloc");
   if (invCtx) {
     destroyChart("inv-alloc");
     const groups = {};
     investments.forEach(inv => {
-      const k = inv.assetType || "Other";
-      groups[k] = (groups[k]||0) + ((inv.currentPrice||inv.avgPrice)*inv.quantity||0);
+      const k   = inv.assetType || "Other";
+      const qty = Math.max(0, inv.quantity - (allSells[inv.id]||[]).reduce((s,sl)=>s+sl.quantity,0));
+      groups[k] = (groups[k]||0) + ((inv.currentPrice||inv.avgPrice) * qty || 0);
     });
 
     chartInstances["inv-alloc"] = new Chart(invCtx, {
       type: "doughnut",
       data: {
         labels: Object.keys(groups),
-        datasets: [{ data: Object.values(groups), backgroundColor: PALETTE, borderWidth: 2, borderColor: isDark()?"#242d16":"#fff" }]
+        datasets: [{
+          data: Object.values(groups),
+          backgroundColor: PALETTE,
+          borderWidth: 2,
+          borderColor: isDark() ? "#242d16" : "#fff"
+        }]
       },
       options: {
         ...baseOptions(), scales: {},
-        plugins: { ...baseOptions().plugins, legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } } }
+        plugins: {
+          ...baseOptions().plugins,
+          legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } }
+        }
       }
     });
   }
 
-  // Growth line (invested vs current)
+  // ── Money flow bar chart — real cash in/out per month ────────
   const growthCtx = document.getElementById("chart-portfolio-growth");
-  if (growthCtx) {
-    destroyChart("portfolio-growth");
-    const totalInvested = investments.reduce((s,i)=>s+(i.avgPrice*i.quantity||0),0);
-    const currentValue  = investments.reduce((s,i)=>s+((i.currentPrice||i.avgPrice)*i.quantity||0),0);
+  if (!growthCtx) return;
+  destroyChart("portfolio-growth");
 
-    const months = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(d.toLocaleDateString("en-IN",{month:"short"}));
-    }
-
-    chartInstances["portfolio-growth"] = new Chart(growthCtx, {
-      type: "bar",
-      data: {
-        labels: months,
-        datasets: [
-          { label: "Invested", data: months.map(()=>totalInvested/6), backgroundColor: "rgba(90,110,58,0.5)" },
-          { label: "Current",  data: months.map(()=>currentValue/6),  backgroundColor: "rgba(122,154,74,0.7)" }
-        ]
-      },
-      options: { ...baseOptions(), plugins: { ...baseOptions().plugins } }
+  // Build 12-month buckets
+  const now = new Date();
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      label: d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+      ym:    d.toISOString().slice(0, 7),
+      invested: 0,
+      proceeds: 0,
     });
   }
+
+  // Map buys
+  investments.forEach(inv => {
+    const ym = (inv.purchaseDate || "").slice(0, 7);
+    const bucket = months.find(m => m.ym === ym);
+    if (bucket) bucket.invested += (inv.avgPrice * inv.quantity) || 0;
+  });
+
+  // Map sells
+  Object.entries(allSells).forEach(([invId, sells]) => {
+    const inv = investments.find(i => i.id === invId);
+    if (!inv) return;
+    sells.forEach(sell => {
+      const ym = (sell.sellDate || "").slice(0, 7);
+      const bucket = months.find(m => m.ym === ym);
+      if (bucket) bucket.proceeds += sell.sellPrice * sell.quantity;
+    });
+  });
+
+  chartInstances["portfolio-growth"] = new Chart(growthCtx, {
+    type: "bar",
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        {
+          label: "Money In (Invested)",
+          data: months.map(m => m.invested),
+          backgroundColor: "rgba(90,110,58,0.75)",
+          borderRadius: 4,
+        },
+        {
+          label: "Money Out (Sale Proceeds)",
+          data: months.map(m => m.proceeds),
+          backgroundColor: "rgba(184,150,46,0.75)",
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      ...baseOptions(),
+      plugins: {
+        ...baseOptions().plugins,
+        tooltip: {
+          ...baseOptions().plugins.tooltip,
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}: ₹${Intl.NumberFormat("en-IN").format(ctx.raw)}`
+          }
+        }
+      }
+    }
+  });
 };
 
 // ─── CASH FLOW BAR CHART ─────────────────────────────────────
