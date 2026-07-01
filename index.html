@@ -386,12 +386,14 @@
               <div class="card-value" id="inv-total-value">₹0</div>
             </div>
             <div class="card">
-              <div class="card-label">Total Profit</div>
-              <div class="card-value positive" id="inv-total-profit">₹0</div>
+              <div class="card-label">Realized P&amp;L</div>
+              <div class="card-value" id="inv-realized">₹0</div>
+              <div class="card-sub muted" id="inv-realized-note">From sold holdings</div>
             </div>
             <div class="card">
-              <div class="card-label">Unrealized</div>
+              <div class="card-label">Unrealized P&amp;L</div>
               <div class="card-value" id="inv-unrealized">₹0</div>
+              <div class="card-sub muted" id="inv-unrealized-note">Open holdings</div>
             </div>
           </div>
           <div class="charts-row">
@@ -400,7 +402,7 @@
               <canvas id="chart-inv-alloc"></canvas>
             </div>
             <div class="chart-card">
-              <div class="chart-title">Portfolio Growth</div>
+              <div class="chart-title">Money Flow — Invested vs Sold</div>
               <canvas id="chart-portfolio-growth"></canvas>
             </div>
           </div>
