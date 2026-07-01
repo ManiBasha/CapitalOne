@@ -295,7 +295,10 @@ const refreshPortfolioPage = async () => {
   const invAgg = aggregateInvestments(invs);
   document.getElementById("inv-current").textContent = formatCurrency(invAgg.currentValue, "INR", true);
   document.getElementById("inv-invested").textContent = formatCurrency(invAgg.totalInvested, "INR", true);
-  document.getElementById("inv-gain").textContent = formatCurrency(invAgg.gain, "INR", true);
+  const totalPnL = invAgg.realized + invAgg.unrealized;
+  const gainEl = document.getElementById("inv-gain");
+  gainEl.textContent = (totalPnL >= 0 ? "+" : "") + formatCurrency(totalPnL, "INR", true);
+  gainEl.className = "cf-val " + (totalPnL >= 0 ? "positive" : "negative");
 
   renderTransactionList(txns.slice(0, 8), "recent-txn-list");
 
