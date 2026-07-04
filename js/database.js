@@ -205,11 +205,56 @@ export const importAllData = async (data) => {
 };
 
 // ─── CLEAR ALL DATA ──────────────────────────────────────────
+// Deletes every collection AND the "sells" sub-collection nested under each
+// investment doc (previously orphaned — the reason clear-all sometimes
+// looked "stuck" when investments with sell history remained visible).
+// Uses Promise.allSettled per collection so one failure doesn't silently
+// abort the rest, and returns a report so the caller can show real errors.
 export const clearAllData = async () => {
   const u = uid();
+  if (!u) throw new Error("Not signed in");
   const cols = ["transactions","accounts","categories","budgets","investments","goals","assets","liabilities"];
+  const errors = [];
+  let deletedCount = 0;
+
   for (const col of cols) {
-    const snap = await getDocs(collection(db, "users", u, col));
-    for (const d of snap.docs) await deleteDoc(d.ref);
+    let snap;
+    try {
+      snap = await getDocs(collection(db, "users", u, col));
+    } catch (err) {
+      errors.push(`${col}: ${err.message}`);
+      continue;
+    }
+
+    // Delete nested "sells" sub-docs first for investments
+    if (col === "investments") {
+      for (const invDoc of snap.docs) {
+        try {
+          const sellsSnap = await getDocs(collection(db, "users", u, "investments", invDoc.id, "sells"));
+          const sellResults = await Promise.allSettled(sellsSnap.docs.map(d => deleteDoc(d.ref)));
+          sellResults.forEach(r => { if (r.status === "rejected") errors.push(`sells: ${r.reason?.message||r.reason}`); });
+        } catch (err) {
+          errors.push(`${col}/${invDoc.id}/sells: ${err.message}`);
+        }
+      }
+    }
+
+    const results = await Promise.allSettled(snap.docs.map(d => deleteDoc(d.ref)));
+    results.forEach(r => {
+      if (r.status === "fulfilled") deletedCount++;
+      else errors.push(`${col}: ${r.reason?.message || r.reason}`);
+    });
   }
+
+  window.dispatchEvent(new Event("data:changed"));
+
+  if (errors.length) {
+    console.error("clearAllData completed with errors:", errors);
+    const e = new Error(`Deleted ${deletedCount} items, but ${errors.length} failed. Check console for details.`);
+    e.partial = true;
+    e.deletedCount = deletedCount;
+    e.errors = errors;
+    throw e;
+  }
+  return { deletedCount };
 };
