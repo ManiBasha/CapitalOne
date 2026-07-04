@@ -12,10 +12,16 @@ import { initGoals, openGoalModal } from "./goals.js";
 import { initTax } from "./tax.js";
 import { initSettings } from "./settings.js";
 import { renderCashFlowChart, refreshChartTheme } from "./charts.js";
+import { initThemeEngine, applyThemeVars, applyStoredAppIcon } from "./theme.js";
 import {
   formatCurrency, convertCurrency, toast, ls, debounce,
   fetchExchangeRates, exchangeRates, monthStart, todayISO, dateRangeFor
 } from "./utils.js";
+
+// Apply any previously saved custom theme color / app icon immediately,
+// before auth resolves, so there's no flash of the default palette.
+initThemeEngine();
+applyStoredAppIcon();
 
 // ============================================================
 // AUTH FLOW
@@ -43,6 +49,9 @@ onAuth(async (user) => {
 
   // Populate sidebar profile
   document.getElementById("user-avatar").innerHTML = user.photoURL
+    ? `<img src="${user.photoURL}" alt="${user.displayName||'User'}" />`
+    : (user.displayName?.[0] || "U");
+  document.getElementById("user-avatar-mobile").innerHTML = user.photoURL
     ? `<img src="${user.photoURL}" alt="${user.displayName||'User'}" />`
     : (user.displayName?.[0] || "U");
   document.getElementById("user-name").textContent = user.displayName || (user.isAnonymous ? "Guest User" : "User");
@@ -151,6 +160,9 @@ const initApp = async () => {
 
   bindNavigation();
   bindSidebarToggle();
+  bindSidebarCollapse();
+  bindProfileToSettings();
+  bindBottomNav();
   bindThemeToggle();
   bindModalClose();
   bindQuickActions();
@@ -190,6 +202,7 @@ const bindNavigation = () => {
 
 const navigateTo = (page) => {
   document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.page === page));
+  document.querySelectorAll(".bottom-nav-item").forEach(n => n.classList.toggle("active", n.dataset.page === page));
   document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
   document.getElementById(`page-${page}`)?.classList.remove("hidden");
 
@@ -200,6 +213,47 @@ const navigateTo = (page) => {
   if (page === "goals") initGoals();
 
   lucide.createIcons();
+};
+
+// ============================================================
+// PROFILE → SETTINGS (name/avatar now acts as the settings entry point)
+// ============================================================
+const bindProfileToSettings = () => {
+  document.getElementById("sidebar-profile").addEventListener("click", () => {
+    navigateTo("settings");
+    closeSidebarMobile();
+  });
+  document.getElementById("mobile-profile-chip").addEventListener("click", () => {
+    navigateTo("settings");
+  });
+};
+
+// ============================================================
+// DESKTOP SIDEBAR COLLAPSE (closable tabs)
+// ============================================================
+const bindSidebarCollapse = () => {
+  const sidebar = document.getElementById("sidebar");
+  const btn = document.getElementById("sidebar-collapse-btn");
+  const collapsed = ls.get("sidebar_collapsed", false);
+  sidebar.classList.toggle("collapsed", collapsed);
+
+  btn.addEventListener("click", () => {
+    const isCollapsed = sidebar.classList.toggle("collapsed");
+    ls.set("sidebar_collapsed", isCollapsed);
+    btn.setAttribute("title", isCollapsed ? "Expand sidebar" : "Collapse sidebar");
+  });
+};
+
+// ============================================================
+// BOTTOM NAV (mobile)
+// ============================================================
+const bindBottomNav = () => {
+  document.querySelectorAll(".bottom-nav-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+      e.preventDefault();
+      navigateTo(item.dataset.page);
+    });
+  });
 };
 
 // ============================================================
@@ -232,6 +286,7 @@ const bindThemeToggle = () => {
     html.setAttribute("data-theme", isDark ? "light" : "dark");
     document.getElementById("theme-label").textContent = isDark ? "Light" : "Dark";
     ls.set("theme_pref", isDark ? "light" : "dark");
+    applyThemeVars();
     refreshChartTheme();
   });
 
