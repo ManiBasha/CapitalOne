@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CapitalOne – Complete Finance App</title>
   <meta name="description" content="Premium personal finance dashboard for INR and SAR users" />
+  <link rel="icon" id="favicon-link" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%235a6e3a%22/><text x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>C</text></svg>" />
 
   <!-- Inter Font -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -93,39 +94,38 @@
           <div class="logo-mark small">C</div>
           <span class="logo-text">CapitalOne</span>
         </div>
+        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Collapse sidebar" title="Collapse sidebar">
+          <i data-lucide="panel-left-close"></i>
+        </button>
         <button class="sidebar-close" id="sidebar-close" aria-label="Close sidebar">
           <i data-lucide="x"></i>
         </button>
       </div>
 
-      <nav class="sidebar-nav">
-        <a href="#" class="nav-item active" data-page="portfolio">
+      <nav class="sidebar-nav" id="sidebar-nav-list">
+        <a href="#" class="nav-item active" data-page="portfolio" title="Portfolio">
           <i data-lucide="layout-dashboard"></i>
           <span>Portfolio</span>
         </a>
-        <a href="#" class="nav-item" data-page="wealth">
+        <a href="#" class="nav-item" data-page="wealth" title="Wealth">
           <i data-lucide="landmark"></i>
           <span>Wealth</span>
         </a>
-        <a href="#" class="nav-item" data-page="money">
+        <a href="#" class="nav-item" data-page="money" title="Money">
           <i data-lucide="wallet"></i>
           <span>Money</span>
         </a>
-        <a href="#" class="nav-item" data-page="investments">
+        <a href="#" class="nav-item" data-page="investments" title="Investments">
           <i data-lucide="trending-up"></i>
           <span>Investments</span>
         </a>
-        <a href="#" class="nav-item" data-page="tax">
+        <a href="#" class="nav-item" data-page="tax" title="Income Tax">
           <i data-lucide="calculator"></i>
           <span>Income Tax</span>
         </a>
-        <a href="#" class="nav-item" data-page="goals">
+        <a href="#" class="nav-item" data-page="goals" title="Goals">
           <i data-lucide="target"></i>
           <span>Goals</span>
-        </a>
-        <a href="#" class="nav-item" data-page="settings">
-          <i data-lucide="settings"></i>
-          <span>Settings</span>
         </a>
       </nav>
 
@@ -135,13 +135,14 @@
           <i data-lucide="moon" class="icon-dark"></i>
           <span id="theme-label">Light</span>
         </button>
-        <div class="sidebar-profile" id="sidebar-profile">
+        <button class="sidebar-profile" id="sidebar-profile" title="Open Settings">
           <div class="avatar" id="user-avatar">U</div>
           <div class="profile-info">
             <span class="profile-name" id="user-name">User</span>
             <span class="profile-email" id="user-email"></span>
           </div>
-        </div>
+          <i data-lucide="settings" class="profile-settings-icon"></i>
+        </button>
       </div>
     </aside>
 
@@ -167,6 +168,9 @@
           <button class="icon-btn" id="notif-btn" aria-label="Notifications">
             <i data-lucide="bell"></i>
             <span class="notif-dot hidden" id="notif-dot"></span>
+          </button>
+          <button class="mobile-profile-chip" id="mobile-profile-chip" title="Open Settings" aria-label="Open Settings">
+            <div class="avatar" id="user-avatar-mobile">U</div>
           </button>
         </div>
       </header>
@@ -508,86 +512,180 @@
 
         <!-- SETTINGS PAGE -->
         <section id="page-settings" class="page hidden">
-          <div class="page-header"><h2>Settings</h2></div>
-          <div class="settings-layout">
+          <div class="page-header"><h2>Settings & Customization</h2></div>
+          <div class="settings-grid">
 
-            <div class="settings-section card">
-              <h3>Profile</h3>
-              <div id="profile-form"></div>
-              <button class="btn btn-primary btn-sm" id="btn-save-profile">Save Profile</button>
-            </div>
-
-            <div class="settings-section card">
-              <h3>Security – App Lock</h3>
-              <div class="form-row">
-                <label>Enable PIN Lock</label>
-                <label class="toggle">
-                  <input type="checkbox" id="pin-enabled-toggle" />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              <div id="pin-setup-section" class="hidden">
-                <div class="form-row">
-                  <label>Set 4-digit PIN</label>
-                  <input type="password" id="new-pin" class="input" maxlength="4" inputmode="numeric" />
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="user"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Profile</span>
+                  <span class="settings-card-sub">Name, occupation, risk profile</span>
                 </div>
-                <div class="form-row">
-                  <label>Confirm PIN</label>
-                  <input type="password" id="confirm-pin" class="input" maxlength="4" inputmode="numeric" />
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div id="profile-form"></div>
+                <button class="btn btn-primary btn-sm" id="btn-save-profile">Save Profile</button>
+              </div>
+            </details>
+
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="palette"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Appearance</span>
+                  <span class="settings-card-sub">Theme color, Light/Dark, app icon</span>
                 </div>
-                <button class="btn btn-primary btn-sm" id="btn-save-pin">Save PIN</button>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div class="form-row-inline" style="align-items:center">
+                  <div class="form-row">
+                    <label>Theme Color</label>
+                    <div class="color-wheel-row">
+                      <input type="color" id="theme-color-wheel" value="#5a6e3a" />
+                      <span class="muted" style="font-size:0.78rem">Pick any hue — Light &amp; Dark themes are generated automatically</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-row-inline" style="margin-top:var(--sp-sm)">
+                  <button class="btn btn-outline btn-sm" id="btn-theme-reset">Reset to Default Olive</button>
+                </div>
+                <div class="form-row" style="margin-top:var(--sp-md)">
+                  <label>App Icon</label>
+                  <div class="app-icon-row">
+                    <div class="app-icon-preview" id="app-icon-preview"><i data-lucide="image"></i></div>
+                    <div>
+                      <button class="btn btn-outline btn-sm" id="btn-upload-icon">
+                        <i data-lucide="upload"></i> Upload Custom Icon
+                      </button>
+                      <button class="btn btn-ghost btn-sm" id="btn-reset-icon">Reset</button>
+                      <input type="file" id="app-icon-upload" accept="image/png,image/jpeg,image/svg+xml,image/x-icon" class="hidden" />
+                      <div class="muted" style="font-size:0.72rem;margin-top:4px">PNG/JPG/SVG, square image recommended (min 192×192)</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            </details>
 
-            <div class="settings-section card">
-              <h3>Import / Export</h3>
-              <div class="import-btns">
-                <button class="btn btn-outline" id="btn-import-zerodha">
-                  <i data-lucide="upload"></i> Import Zerodha XLS
-                </button>
-                <button class="btn btn-outline" id="btn-import-cashew">
-                  <i data-lucide="upload"></i> Import Cashew CSV
-                </button>
-                <button class="btn btn-outline" id="btn-export-excel">
-                  <i data-lucide="download"></i> Export Excel
-                </button>
-                <button class="btn btn-outline" id="btn-export-json">
-                  <i data-lucide="download"></i> Backup JSON
-                </button>
-                <button class="btn btn-outline" id="btn-import-json">
-                  <i data-lucide="refresh-cw"></i> Restore Backup
-                </button>
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="lock"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Security – App Lock</span>
+                  <span class="settings-card-sub">PIN protection</span>
+                </div>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div class="form-row">
+                  <label>Enable PIN Lock</label>
+                  <label class="toggle">
+                    <input type="checkbox" id="pin-enabled-toggle" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div id="pin-setup-section" class="hidden">
+                  <div class="form-row">
+                    <label>Set 4-digit PIN</label>
+                    <input type="password" id="new-pin" class="input" maxlength="4" inputmode="numeric" />
+                  </div>
+                  <div class="form-row">
+                    <label>Confirm PIN</label>
+                    <input type="password" id="confirm-pin" class="input" maxlength="4" inputmode="numeric" />
+                  </div>
+                  <button class="btn btn-primary btn-sm" id="btn-save-pin">Save PIN</button>
+                </div>
               </div>
-              <input type="file" id="file-import" accept=".xls,.xlsx,.csv,.json" class="hidden" />
-            </div>
+            </details>
 
-            <div class="settings-section card">
-              <h3>Currency & Exchange Rates</h3>
-              <div class="form-row">
-                <label>Base Currency</label>
-                <select id="setting-base-currency" class="input">
-                  <option value="INR">INR – Indian Rupee</option>
-                  <option value="SAR">SAR – Saudi Riyal</option>
-                  <option value="USD">USD – US Dollar</option>
-                </select>
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="repeat"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Import / Export</span>
+                  <span class="settings-card-sub">Zerodha, Cashew CSV, backups</span>
+                </div>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div class="import-btns">
+                  <button class="btn btn-outline" id="btn-import-zerodha">
+                    <i data-lucide="upload"></i> Import Zerodha XLS
+                  </button>
+                  <button class="btn btn-outline" id="btn-import-cashew">
+                    <i data-lucide="upload"></i> Import Cashew CSV
+                  </button>
+                  <button class="btn btn-outline" id="btn-export-excel">
+                    <i data-lucide="download"></i> Export Excel
+                  </button>
+                  <button class="btn btn-outline" id="btn-export-json">
+                    <i data-lucide="download"></i> Backup JSON
+                  </button>
+                  <button class="btn btn-outline" id="btn-import-json">
+                    <i data-lucide="refresh-cw"></i> Restore Backup
+                  </button>
+                </div>
+                <input type="file" id="file-import" accept=".xls,.xlsx,.csv,.json" class="hidden" />
               </div>
-              <button class="btn btn-outline btn-sm" id="btn-refresh-rates">
-                <i data-lucide="refresh-cw"></i> Refresh Exchange Rates
-              </button>
-              <div id="rates-display" class="rates-display"></div>
-            </div>
+            </details>
 
-            <div class="settings-section card">
-              <h3>Danger Zone</h3>
-              <button class="btn btn-danger btn-sm" id="btn-sign-out">Sign Out</button>
-              <button class="btn btn-danger btn-sm" id="btn-clear-data" style="margin-left:0.5rem">Clear All Data</button>
-            </div>
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="coins"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Currency & Exchange Rates</span>
+                  <span class="settings-card-sub">Base currency, live rates</span>
+                </div>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div class="form-row">
+                  <label>Base Currency</label>
+                  <select id="setting-base-currency" class="input">
+                    <option value="INR">INR – Indian Rupee</option>
+                    <option value="SAR">SAR – Saudi Riyal</option>
+                    <option value="USD">USD – US Dollar</option>
+                  </select>
+                </div>
+                <button class="btn btn-outline btn-sm" id="btn-refresh-rates">
+                  <i data-lucide="refresh-cw"></i> Refresh Exchange Rates
+                </button>
+                <div id="rates-display" class="rates-display"></div>
+              </div>
+            </details>
+
+            <details class="settings-card settings-card-danger">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="triangle-alert"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Danger Zone</span>
+                  <span class="settings-card-sub">Sign out, delete all data</span>
+                </div>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <button class="btn btn-danger btn-sm" id="btn-sign-out">Sign Out</button>
+                <button class="btn btn-danger btn-sm" id="btn-clear-data" style="margin-left:0.5rem">Clear All Data</button>
+              </div>
+            </details>
 
           </div>
         </section>
 
       </main>
     </div>
+
+    <!-- BOTTOM NAV (mobile, iOS-style floating glass pill) -->
+    <nav class="bottom-nav" id="bottom-nav">
+      <a href="#" class="bottom-nav-item active" data-page="portfolio"><i data-lucide="layout-dashboard"></i><span>Home</span></a>
+      <a href="#" class="bottom-nav-item" data-page="wealth"><i data-lucide="landmark"></i><span>Wealth</span></a>
+      <a href="#" class="bottom-nav-item" data-page="money"><i data-lucide="wallet"></i><span>Money</span></a>
+      <a href="#" class="bottom-nav-item" data-page="investments"><i data-lucide="trending-up"></i><span>Invest</span></a>
+      <a href="#" class="bottom-nav-item" data-page="tax"><i data-lucide="calculator"></i><span>Tax</span></a>
+      <a href="#" class="bottom-nav-item" data-page="goals"><i data-lucide="target"></i><span>Goals</span></a>
+    </nav>
 
     <!-- FAB -->
     <button class="fab" id="fab-add" aria-label="Add transaction">
