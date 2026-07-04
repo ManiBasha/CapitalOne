@@ -4,6 +4,7 @@
 import { saveProfile, getProfile, clearAllData } from "./database.js";
 import { toast, ls, fetchExchangeRates, exchangeRates, formatCurrency } from "./utils.js";
 import { logout } from "./firebase.js";
+import { setThemeColor, resetThemeColor, getThemeColor, setAppIcon, resetAppIcon } from "./theme.js";
 
 export const initSettings = async () => {
   await renderProfileForm();
@@ -11,6 +12,7 @@ export const initSettings = async () => {
   bindImportExportEvents();
   bindCurrencyEvents();
   bindDangerZone();
+  bindAppearanceEvents();
   renderRatesDisplay();
 };
 
@@ -168,6 +170,53 @@ const renderRatesDisplay = () => {
       .map(([k,v]) => `<span class="rate-chip">1 ${k} = ₹${(1/v).toFixed(2)} &nbsp;|&nbsp; 1 INR = ${v.toFixed(4)} ${k}</span>`).join("")}`;
 };
 
+// ─── APPEARANCE (Theme color wheel + App Icon) ────────────────
+const bindAppearanceEvents = () => {
+  const wheel = document.getElementById("theme-color-wheel");
+  wheel.value = getThemeColor();
+  wheel.addEventListener("input", () => setThemeColor(wheel.value));
+  wheel.addEventListener("change", () => toast("Theme color updated", "success"));
+
+  document.getElementById("btn-theme-reset").addEventListener("click", () => {
+    resetThemeColor();
+    wheel.value = "#5a6e3a";
+    toast("Reverted to default Olive theme", "success");
+  });
+
+  // Custom app icon
+  const iconInput = document.getElementById("app-icon-upload");
+  const preview = document.getElementById("app-icon-preview");
+  const storedIcon = ls.get("app_icon_data");
+  if (storedIcon) preview.innerHTML = `<img src="${storedIcon}" alt="App icon" />`;
+
+  document.getElementById("btn-upload-icon").addEventListener("click", () => iconInput.click());
+
+  iconInput.addEventListener("change", () => {
+    const file = iconInput.files[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      toast("Please choose an image under 1MB", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAppIcon(reader.result);
+      preview.innerHTML = `<img src="${reader.result}" alt="App icon" />`;
+      toast("App icon updated", "success");
+    };
+    reader.onerror = () => toast("Couldn't read that image file", "error");
+    reader.readAsDataURL(file);
+    iconInput.value = "";
+  });
+
+  document.getElementById("btn-reset-icon").addEventListener("click", () => {
+    resetAppIcon();
+    preview.innerHTML = `<i data-lucide="image"></i>`;
+    lucide.createIcons();
+    toast("App icon reset to default", "success");
+  });
+};
+
 // ─── DANGER ZONE ──────────────────────────────────────────────
 const bindDangerZone = () => {
   document.getElementById("btn-sign-out").addEventListener("click", async () => {
@@ -179,8 +228,26 @@ const bindDangerZone = () => {
   document.getElementById("btn-clear-data").addEventListener("click", async () => {
     if (!confirm("This will permanently delete ALL your financial data. Continue?")) return;
     if (!confirm("Are you absolutely sure? This cannot be undone.")) return;
-    await clearAllData();
-    toast("All data cleared", "success");
-    setTimeout(() => location.reload(), 1000);
+
+    const btn = document.getElementById("btn-clear-data");
+    if (btn.disabled) return; // guard against double-click races
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = "Deleting…";
+
+    try {
+      const result = await clearAllData();
+      toast(`All data cleared (${result.deletedCount} items removed)`, "success");
+      setTimeout(() => location.reload(), 1000);
+    } catch (err) {
+      if (err.partial) {
+        toast(`Cleared ${err.deletedCount} items, but some failed to delete. Try again.`, "warning");
+      } else {
+        toast("Couldn't clear data: " + err.message, "error");
+      }
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      console.error(err);
+    }
   });
 };
