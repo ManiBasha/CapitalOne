@@ -11,7 +11,7 @@
 
 export const firebaseConfig = {
   apiKey:            "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws",
-  authDomain:       "capitalone-finance.firebaseapp.com",
+  authDomain:        "capitalone-finance.firebaseapp.com",
   projectId:         "capitalone-finance",
   storageBucket:     "capitalone-finance.firebasestorage.app",
   messagingSenderId: "344388986779",
