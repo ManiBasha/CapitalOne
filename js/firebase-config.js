@@ -4,9 +4,6 @@
 // IMPORTANT: This file is intentionally separate from firebase.js.
 // Future code updates / AI-generated changes should NEVER need to
 // touch this file — so your real keys are never overwritten again.
-//
-// Fill this in ONCE from:
-// Firebase Console → Project Settings → General → Your apps → SDK snippet
 // ============================================================
 
 export const firebaseConfig = {
@@ -19,7 +16,7 @@ export const firebaseConfig = {
 };
 
 // Used to detect an unconfigured project and show a clear setup banner
-// instead of failing silently
+// instead of failing silently.
 export const isFirebaseConfigured = () =>
-  firebaseConfig.apiKey && firebaseConfig.apiKey !== "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws" &&
-  firebaseConfig.projectId && firebaseConfig.projectId !== "capitalone-finance";
+  firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY" &&
+  firebaseConfig.projectId && firebaseConfig.projectId !== "YOUR_PROJECT_ID";
