@@ -14,3 +14,4 @@ export const firebaseConfig = {
 export const isFirebaseConfigured = () =>
   firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY" &&
   firebaseConfig.projectId && firebaseConfig.projectId !== "YOUR_PROJECT_ID";
+// Updated File
