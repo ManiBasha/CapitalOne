@@ -11,7 +11,7 @@
 
 export const firebaseConfig = {
   apiKey:            "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws",
-  authDomain:        "capitalone-finance.firebaseapp.com",
+  authDomain:       "capitalone-finance.firebaseapp.com",
   projectId:         "capitalone-finance",
   storageBucket:     "capitalone-finance.firebasestorage.app",
   messagingSenderId: "344388986779",
@@ -19,5 +19,4 @@ export const firebaseConfig = {
 };
 
 // Used to detect an unconfigured project and show a clear setup banner
-// instead of failing silently.
-
+// instead of failing silently
