@@ -20,3 +20,6 @@ export const firebaseConfig = {
 
 // Used to detect an unconfigured project and show a clear setup banner
 // instead of failing silently
+export const isFirebaseConfigured = () =>
+  firebaseConfig.apiKey && firebaseConfig.apiKey !== "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws" &&
+  firebaseConfig.projectId && firebaseConfig.projectId !== "capitalone-finance";
