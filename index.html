@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CapitalOne – Complete Finance App</title>
-  <meta name="description" content="Premium personal finance dashboard for INR and SAR users" />
+  <title>CapitalOne – Wealth & Investment Dashboard</title>
+  <meta name="description" content="Personal wealth & investment dashboard: portfolio tracking, net worth, goals, and Indian income tax planning" />
   <link rel="icon" id="favicon-link" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%235a6e3a%22/><text x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>C</text></svg>" />
 
   <!-- Inter Font -->
@@ -103,29 +103,25 @@
       </div>
 
       <nav class="sidebar-nav" id="sidebar-nav-list">
-        <a href="#" class="nav-item active" data-page="portfolio" title="Portfolio">
+        <a href="#" class="nav-item active" data-page="dashboard" title="Dashboard">
           <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-page="portfolio" title="Portfolio">
+          <i data-lucide="briefcase"></i>
           <span>Portfolio</span>
-        </a>
-        <a href="#" class="nav-item" data-page="wealth" title="Wealth">
-          <i data-lucide="landmark"></i>
-          <span>Wealth</span>
-        </a>
-        <a href="#" class="nav-item" data-page="money" title="Money">
-          <i data-lucide="wallet"></i>
-          <span>Money</span>
         </a>
         <a href="#" class="nav-item" data-page="investments" title="Investments">
           <i data-lucide="trending-up"></i>
           <span>Investments</span>
         </a>
-        <a href="#" class="nav-item" data-page="tax" title="Income Tax">
-          <i data-lucide="calculator"></i>
-          <span>Income Tax</span>
-        </a>
         <a href="#" class="nav-item" data-page="goals" title="Goals">
           <i data-lucide="target"></i>
           <span>Goals</span>
+        </a>
+        <a href="#" class="nav-item" data-page="tax" title="Income Tax">
+          <i data-lucide="calculator"></i>
+          <span>Income Tax</span>
         </a>
       </nav>
 
@@ -187,193 +183,132 @@
       <!-- Pages -->
       <main class="page-content">
 
-        <!-- PORTFOLIO PAGE -->
-        <section id="page-portfolio" class="page active">
-          <div class="page-header">
-            <h2>Portfolio</h2>
-            <div class="cashflow-filter" id="cashflow-filter">
-              <button class="filter-btn active" data-range="30d">30D</button>
-              <button class="filter-btn" data-range="7d">7D</button>
-              <button class="filter-btn" data-range="6m">6M</button>
-              <button class="filter-btn" data-range="1y">1Y</button>
-              <button class="filter-btn" data-range="all">All</button>
-            </div>
-          </div>
+        <!-- DASHBOARD PAGE -->
+        <section id="page-dashboard" class="page active">
+          <div class="page-header"><h2>Dashboard</h2></div>
 
           <div class="cards-grid">
             <div class="card card-hero" id="card-networth">
               <div class="card-label">Net Worth</div>
               <div class="card-value" id="nw-value">₹0</div>
               <div class="card-sub" id="nw-sar">SAR 0</div>
-              <div class="card-delta positive" id="nw-delta">+0.00% today</div>
             </div>
-            <div class="card" id="card-cashflow">
-              <div class="card-label">Cash Flow</div>
-              <div class="cashflow-row">
-                <span class="cf-label">Income</span>
-                <span class="cf-val positive" id="cf-income">₹0</span>
-              </div>
-              <div class="cashflow-row">
-                <span class="cf-label">Expenses</span>
-                <span class="cf-val negative" id="cf-expense">₹0</span>
-              </div>
-              <div class="cashflow-row">
-                <span class="cf-label">Net</span>
-                <span class="cf-val" id="cf-net">₹0</span>
-              </div>
+            <div class="card">
+              <div class="card-label">Total Invested</div>
+              <div class="card-value" id="dash-invested">₹0</div>
             </div>
-            <div class="card" id="card-investments">
-              <div class="card-label">Investments</div>
-              <div class="card-value" id="inv-current">₹0</div>
-              <div class="cashflow-row">
-                <span class="cf-label">Invested</span>
-                <span class="cf-val" id="inv-invested">₹0</span>
-              </div>
-              <div class="cashflow-row">
-                <span class="cf-label">Returns</span>
-                <span class="cf-val positive" id="inv-gain">₹0</span>
-              </div>
+            <div class="card">
+              <div class="card-label">Current Portfolio Value</div>
+              <div class="card-value" id="dash-current">₹0</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Unrealized P&L</div>
+              <div class="card-value" id="dash-pnl">₹0</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Today's Change</div>
+              <div class="card-value" id="dash-today-change">—</div>
+            </div>
+            <div class="card">
+              <div class="card-label">XIRR (Overall)</div>
+              <div class="card-value" id="dash-xirr">—</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Portfolio Health Score</div>
+              <div class="card-value" id="dash-health-score">—</div>
+              <div class="card-sub">out of 100</div>
             </div>
           </div>
 
           <div class="quick-actions">
-            <button class="qa-btn" id="qa-add-txn">
-              <i data-lucide="plus-circle"></i> Add Transaction
-            </button>
-            <button class="qa-btn" id="qa-add-inv">
+            <button class="qa-btn" id="qa-add-investment-dash">
               <i data-lucide="trending-up"></i> Add Investment
             </button>
             <button class="qa-btn" id="qa-add-goal">
               <i data-lucide="target"></i> Add Goal
             </button>
             <button class="qa-btn" id="qa-import">
-              <i data-lucide="upload"></i> Import
+              <i data-lucide="upload"></i> Import Zerodha
             </button>
           </div>
 
-          <div class="section-title">Recent Transactions</div>
-          <div id="recent-txn-list" class="txn-list"></div>
-        </section>
-
-        <!-- WEALTH PAGE -->
-        <section id="page-wealth" class="page hidden">
-          <div class="page-header"><h2>Wealth</h2></div>
-          <div class="cards-grid">
-            <div class="card">
-              <div class="card-label">Total Assets</div>
-              <div class="card-value positive" id="wealth-assets">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Total Liabilities</div>
-              <div class="card-value negative" id="wealth-liabilities">₹0</div>
-            </div>
-            <div class="card card-hero">
-              <div class="card-label">Net Worth</div>
-              <div class="card-value" id="wealth-networth">₹0</div>
-              <div class="card-sub" id="wealth-nw-sar">SAR 0</div>
+          <div class="page-header" style="margin-top:1.5rem">
+            <h3 style="font-size:1rem">Portfolio Performance</h3>
+            <div class="cashflow-filter" id="perf-range-filter">
+              <button class="filter-btn" data-range="Today">Today</button>
+              <button class="filter-btn" data-range="1W">1W</button>
+              <button class="filter-btn active" data-range="1M">1M</button>
+              <button class="filter-btn" data-range="3M">3M</button>
+              <button class="filter-btn" data-range="6M">6M</button>
+              <button class="filter-btn" data-range="1Y">1Y</button>
+              <button class="filter-btn" data-range="3Y">3Y</button>
+              <button class="filter-btn" data-range="All">All</button>
             </div>
           </div>
-          <div class="charts-row">
+          <div class="chart-card">
+            <canvas id="chart-portfolio-performance"></canvas>
+          </div>
+          <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app — historical market prices aren't backfilled.</div>
+
+          <div class="charts-row" style="margin-top:1.5rem">
             <div class="chart-card">
-              <div class="chart-title">Asset Allocation</div>
-              <canvas id="chart-asset-alloc"></canvas>
+              <div class="chart-title">Quick Summary — Asset Allocation</div>
+              <canvas id="chart-quick-summary"></canvas>
             </div>
             <div class="chart-card">
-              <div class="chart-title">Net Worth Timeline</div>
-              <canvas id="chart-nw-timeline"></canvas>
+              <div class="chart-title">Breakdown</div>
+              <div id="quick-summary-list" class="qs-list"></div>
             </div>
           </div>
-          <div class="section-title">Assets</div>
-          <div id="assets-table-container"></div>
-          <div class="section-title" style="margin-top:2rem">Liabilities</div>
-          <div id="liabilities-table-container"></div>
+
+          <div class="section-title" style="margin-top:1.5rem">Upcoming Reminders</div>
+          <div id="reminders-list" class="reminders-list"></div>
+
+          <details class="settings-card" style="margin-top:1.5rem">
+            <summary>
+              <div class="settings-card-icon"><i data-lucide="landmark"></i></div>
+              <div class="settings-card-text">
+                <span class="settings-card-title">Manage Cash, Gold & Other Assets</span>
+                <span class="settings-card-sub">Feeds into Net Worth &amp; Quick Summary above</span>
+              </div>
+              <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+            </summary>
+            <div class="settings-card-body">
+              <div class="cards-grid" style="margin-bottom:1rem">
+                <div class="card">
+                  <div class="card-label">Total Other Assets</div>
+                  <div class="card-value positive" id="wealth-assets">₹0</div>
+                </div>
+                <div class="card">
+                  <div class="card-label">Total Liabilities</div>
+                  <div class="card-value negative" id="wealth-liabilities">₹0</div>
+                </div>
+              </div>
+              <span class="hidden" id="wealth-networth"></span>
+              <span class="hidden" id="wealth-nw-sar"></span>
+              <div class="section-title">Assets (Cash, Gold/Jewelry, Real Estate, etc.)</div>
+              <button class="btn btn-primary btn-sm" id="btn-add-asset" style="margin:0.5rem 0">
+                <i data-lucide="plus"></i> Add Asset
+              </button>
+              <div id="assets-table-container"></div>
+              <div class="section-title" style="margin-top:1.5rem">Liabilities</div>
+              <button class="btn btn-primary btn-sm" id="btn-add-liab" style="margin:0.5rem 0">
+                <i data-lucide="plus"></i> Add Liability
+              </button>
+              <div id="liabilities-table-container"></div>
+            </div>
+          </details>
         </section>
 
-        <!-- MONEY PAGE -->
-        <section id="page-money" class="page hidden">
-          <div class="page-header">
-            <h2>Money</h2>
-            <button class="btn btn-primary btn-sm" id="btn-add-txn">
-              <i data-lucide="plus"></i> Add
-            </button>
-          </div>
-
-          <div class="cards-grid">
-            <div class="card">
-              <div class="card-label">Income This Month</div>
-              <div class="card-value positive" id="money-income">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Expenses This Month</div>
-              <div class="card-value negative" id="money-expense">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Savings Rate</div>
-              <div class="card-value" id="money-savings-rate">0%</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Accounts Balance</div>
-              <div class="card-value" id="money-accounts-bal">₹0</div>
-            </div>
-          </div>
-
-          <div class="tabs" id="money-tabs">
-            <button class="tab active" data-tab="transactions">Transactions</button>
-            <button class="tab" data-tab="accounts">Accounts</button>
-            <button class="tab" data-tab="budgets">Budgets</button>
-            <button class="tab" data-tab="categories">Categories</button>
-          </div>
-
-          <!-- Transactions tab -->
-          <div id="tab-transactions" class="tab-content active">
-            <div class="filter-bar">
-              <input type="date" id="txn-filter-from" class="input-sm" />
-              <span>to</span>
-              <input type="date" id="txn-filter-to" class="input-sm" />
-              <select id="txn-filter-type" class="input-sm">
-                <option value="">All Types</option>
-                <option value="income">Income</option>
-                <option value="expense">Expense</option>
-                <option value="transfer">Transfer</option>
-              </select>
-              <select id="txn-filter-account" class="input-sm">
-                <option value="">All Accounts</option>
-              </select>
-              <select id="txn-filter-category" class="input-sm">
-                <option value="">All Categories</option>
-              </select>
-              <input type="text" id="txn-search" class="input-sm" placeholder="Search…" />
-            </div>
-            <div id="txn-list" class="txn-list"></div>
-            <div id="txn-pagination" class="pagination"></div>
-          </div>
-
-          <!-- Accounts tab -->
-          <div id="tab-accounts" class="tab-content hidden">
-            <button class="btn btn-primary btn-sm" id="btn-add-account" style="margin-bottom:1rem">
-              <i data-lucide="plus"></i> Add Account
-            </button>
-            <div id="accounts-grid" class="accounts-grid"></div>
-          </div>
-
-          <!-- Budgets tab -->
-          <div id="tab-budgets" class="tab-content hidden">
-            <button class="btn btn-primary btn-sm" id="btn-add-budget" style="margin-bottom:1rem">
-              <i data-lucide="plus"></i> Add Budget
-            </button>
-            <div id="budgets-list"></div>
-          </div>
-
-          <!-- Categories tab -->
-          <div id="tab-categories" class="tab-content hidden">
-            <button class="btn btn-primary btn-sm" id="btn-add-category" style="margin-bottom:1rem">
-              <i data-lucide="plus"></i> Add Category
-            </button>
-            <div id="categories-grid" class="categories-grid"></div>
+        <!-- PORTFOLIO PAGE (placeholder — full holdings table/charts land in the next build phase) -->
+        <section id="page-portfolio" class="page hidden">
+          <div class="page-header"><h2>Portfolio</h2></div>
+          <div class="empty-state">
+            <i data-lucide="briefcase"></i>
+            <p>The full Portfolio page (holdings table, Sector/Asset/Broker allocation, CAGR) is coming in the next build phase.</p>
           </div>
         </section>
 
-        <!-- INVESTMENTS PAGE -->
         <section id="page-investments" class="page hidden">
           <div class="page-header"><h2>Investments</h2>
             <button class="btn btn-primary btn-sm" id="btn-add-investment">
@@ -656,6 +591,28 @@
               </div>
             </details>
 
+            <details class="settings-card">
+              <summary>
+                <div class="settings-card-icon"><i data-lucide="bell"></i></div>
+                <div class="settings-card-text">
+                  <span class="settings-card-title">Notifications</span>
+                  <span class="settings-card-sub">Tax &amp; portfolio review reminders</span>
+                </div>
+                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
+              </summary>
+              <div class="settings-card-body">
+                <div class="form-row">
+                  <label>ITR filing reminder — days before 31 July deadline</label>
+                  <input type="number" id="setting-itr-days" class="input" min="1" max="180" value="60" />
+                </div>
+                <div class="form-row">
+                  <label>Monthly portfolio review reminder — day of month</label>
+                  <input type="number" id="setting-review-day" class="input" min="1" max="28" value="1" />
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-save-notifications">Save</button>
+              </div>
+            </details>
+
             <details class="settings-card settings-card-danger">
               <summary>
                 <div class="settings-card-icon"><i data-lucide="triangle-alert"></i></div>
@@ -679,12 +636,11 @@
 
     <!-- BOTTOM NAV (mobile, iOS-style floating glass pill) -->
     <nav class="bottom-nav" id="bottom-nav">
-      <a href="#" class="bottom-nav-item active" data-page="portfolio"><i data-lucide="layout-dashboard"></i><span>Home</span></a>
-      <a href="#" class="bottom-nav-item" data-page="wealth"><i data-lucide="landmark"></i><span>Wealth</span></a>
-      <a href="#" class="bottom-nav-item" data-page="money"><i data-lucide="wallet"></i><span>Money</span></a>
+      <a href="#" class="bottom-nav-item active" data-page="dashboard"><i data-lucide="layout-dashboard"></i><span>Home</span></a>
+      <a href="#" class="bottom-nav-item" data-page="portfolio"><i data-lucide="briefcase"></i><span>Portfolio</span></a>
       <a href="#" class="bottom-nav-item" data-page="investments"><i data-lucide="trending-up"></i><span>Invest</span></a>
-      <a href="#" class="bottom-nav-item" data-page="tax"><i data-lucide="calculator"></i><span>Tax</span></a>
       <a href="#" class="bottom-nav-item" data-page="goals"><i data-lucide="target"></i><span>Goals</span></a>
+      <a href="#" class="bottom-nav-item" data-page="tax"><i data-lucide="calculator"></i><span>Tax</span></a>
     </nav>
 
     <!-- FAB -->
