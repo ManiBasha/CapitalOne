@@ -10,12 +10,12 @@
 // ============================================================
 
 export const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws",
+  authDomain:        "capitalone-finance.firebaseapp.com",
+  projectId:         "capitalone-finance",
+  storageBucket:     "capitalone-finance.firebasestorage.app",
+  messagingSenderId: "344388986779",
+  appId:             "1:344388986779:web:5e7d410c49842e2e5fe33e"
 };
 
 // Used to detect an unconfigured project and show a clear setup banner
@@ -23,3 +23,9 @@ export const firebaseConfig = {
 export const isFirebaseConfigured = () =>
   firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY" &&
   firebaseConfig.projectId && firebaseConfig.projectId !== "YOUR_PROJECT_ID";
+  apiKey:            "AIzaSyCfS59K-LYm_zXrWJEYVQ9IRID4al0wkws",
+  authDomain:        "capitalone-finance.firebaseapp.com",
+  projectId:         "capitalone-finance",
+  storageBucket:     "capitalone-finance.firebasestorage.app",
+  messagingSenderId: "344388986779",
+  appId:             "1:344388986779:web:5e7d410c49842e2e5fe33e"
