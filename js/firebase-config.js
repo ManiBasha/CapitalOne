@@ -20,3 +20,4 @@ export const firebaseConfig = {
 
 // Used to detect an unconfigured project and show a clear setup banner
 // instead of failing silently.
+
