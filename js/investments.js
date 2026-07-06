@@ -236,7 +236,7 @@ const renderInvTabs = () => {
   });
 };
 
-// ─── DAILY SNAPSHOT BY ASSET CLASS (for the trading-style value chart) ──
+// ─── DAILY SNAPSHOT BY ASSET CLASS  ──
 const SNAPSHOT_TYPE_KEY = "portfolio_snapshots_by_type";
 const recordAssetClassSnapshot = () => {
   const byType = {};
