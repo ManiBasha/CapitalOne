@@ -50,6 +50,15 @@ export const calcMFCharges = (turnover, side, overrides = {}) => {
   }
 };
 
+export const calcCommodityCharges = (side, overrides = {}) => {
+  const brokerage = overrides.brokerage || 0;
+  const gst = ((overrides.gstPct || 0) / 100) * brokerage;
+  const dpCharge = side === "sell" ? (overrides.dpCharge || 0) : 0;
+  const other = overrides.otherCharges || 0;
+  const total = brokerage + gst + dpCharge + other;
+  return { brokerage, gst, dpCharge, otherCharges: other, total };
+};
+
 export const calcGenericCharges = (overrides = {}) => {
   const other = overrides.otherCharges || 0;
   return { otherCharges: other, total: other };
