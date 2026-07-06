@@ -271,28 +271,57 @@ export const renderQuickSummaryChart = (breakdown) => {
 };
 
 // ─── DASHBOARD: PORTFOLIO PERFORMANCE LINE ────────────────────
-// series: [{ date: "YYYY-MM-DD", value: number }, ...]
-export const renderPortfolioPerformanceChart = (series) => {
+// investedSeries: [{ date, value }] — cumulative money invested, from the
+//   actual first purchase date (accurate all the way back).
+// valueSeries: [{ date, value }] — current market value from daily
+//   snapshots (only available from when the app started recording).
+export const renderPortfolioPerformanceChart = (investedSeries, valueSeries = []) => {
   const ctx = document.getElementById("chart-portfolio-performance");
   if (!ctx) return;
   destroyChart("portfolio-performance");
 
+  // Union of all dates so both lines share one axis; missing points are
+  // left null so Chart.js just doesn't draw that segment (no fake zeros).
+  const allDates = [...new Set([...investedSeries.map(p=>p.date), ...valueSeries.map(p=>p.date)])].sort();
+  const investedMap = Object.fromEntries(investedSeries.map(p => [p.date, p.value]));
+  const valueMap = Object.fromEntries(valueSeries.map(p => [p.date, p.value]));
+
   chartInstances["portfolio-performance"] = new Chart(ctx, {
     type: "line",
     data: {
-      labels: series.map(p => p.date),
-      datasets: [{
-        label: "Portfolio Value",
-        data: series.map(p => p.value),
-        borderColor: "#5a6e3a",
-        backgroundColor: "rgba(90,110,58,0.10)",
-        fill: true,
-        tension: 0.35,
-        pointRadius: series.length > 40 ? 0 : 3,
-        pointBackgroundColor: "#5a6e3a"
-      }]
+      labels: allDates,
+      datasets: [
+        {
+          label: "Invested (cumulative)",
+          data: allDates.map(d => investedMap[d] ?? null),
+          borderColor: "#94a06a",
+          backgroundColor: "rgba(148,160,106,0.08)",
+          borderDash: [5, 3],
+          fill: false,
+          tension: 0.2,
+          spanGaps: true,
+          pointRadius: 0,
+        },
+        {
+          label: "Current Value",
+          data: allDates.map(d => valueMap[d] ?? null),
+          borderColor: "#5a6e3a",
+          backgroundColor: "rgba(90,110,58,0.10)",
+          fill: true,
+          tension: 0.35,
+          spanGaps: true,
+          pointRadius: allDates.length > 40 ? 0 : 3,
+          pointBackgroundColor: "#5a6e3a"
+        }
+      ]
     },
-    options: { ...baseOptions(), plugins: { ...baseOptions().plugins, legend: { display: false } } }
+    options: {
+      ...baseOptions(),
+      plugins: {
+        ...baseOptions().plugins,
+        legend: { display: true, position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } }
+      }
+    }
   });
 };
 
@@ -304,12 +333,20 @@ export const renderPortfolioValueTrendChart = (snaps) => {
   destroyChart("portfolio-value-trend");
 
   const dates = Object.keys(snaps).sort();
-  const types = [
-    { key: "Equity",       color: "#5a6e3a" },
-    { key: "Mutual Fund",  color: "#b8962e" },
-    { key: "Commodity",    color: "#8b5cf6" },
-    { key: "FD",           color: "#3b82f6" },
-  ];
+  const BASE_COLORS = {
+    "Equity": "#5a6e3a", "Mutual Fund": "#b8962e", "Commodity": "#8b5cf6", "FD": "#3b82f6"
+  };
+  const EXTRA_COLORS = ["#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16"];
+
+  // Collect every asset-type key that has ever appeared in the snapshots
+  // (base 4 + any custom types the user added), so custom types get their
+  // own line automatically.
+  const allTypes = [...new Set(dates.flatMap(d => Object.keys(snaps[d] || {})))];
+  let extraIdx = 0;
+  const types = allTypes.map(key => ({
+    key,
+    color: BASE_COLORS[key] || EXTRA_COLORS[extraIdx++ % EXTRA_COLORS.length]
+  }));
 
   chartInstances["portfolio-value-trend"] = new Chart(ctx, {
     type: "line",
