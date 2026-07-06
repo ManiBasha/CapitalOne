@@ -1,5 +1,5 @@
 // ============================================================
-// js/dashboard.js – Personal Wealth & Investment Dashboard home page
+// js/dashboard.js Dashboard home page
 // ============================================================
 import { getInvestmentsData, getAllSells, getAllBuys, aggregateInvestments, openInvModal } from "./investments.js?v=20260705b";
 import { getWealthData } from "./wealth.js?v=20260705b";
