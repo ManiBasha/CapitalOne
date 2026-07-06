@@ -345,6 +345,18 @@
               <i data-lucide="plus"></i> Add
             </button>
           </div>
+          <div class="filter-bar">
+            <label class="muted" style="font-size:0.8rem">Realized P&amp;L for:</label>
+            <select id="inv-fy-filter" class="input-sm">
+              <option value="all">All Time</option>
+            </select>
+            <span class="muted" style="font-size:0.78rem">or custom range:</span>
+            <input type="date" id="inv-date-from" class="input-sm" />
+            <span class="muted">to</span>
+            <input type="date" id="inv-date-to" class="input-sm" />
+            <button class="btn btn-outline btn-sm" id="btn-apply-date-filter">Apply</button>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-date-filter">Clear</button>
+          </div>
           <div class="cards-grid">
             <div class="card">
               <div class="card-label">Total Invested</div>
