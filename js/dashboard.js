@@ -1,11 +1,49 @@
 // ============================================================
 // js/dashboard.js – Personal Wealth & Investment Dashboard home page
 // ============================================================
-import { getInvestmentsData, getAllSells, aggregateInvestments, openInvModal } from "./investments.js?v=20260705b";
+import { getInvestmentsData, getAllSells, getAllBuys, aggregateInvestments, openInvModal } from "./investments.js?v=20260705b";
 import { getWealthData } from "./wealth.js?v=20260705b";
 import { getGoalsData } from "./goals.js?v=20260705b";
 import { formatCurrency, todayISO, ls } from "./utils.js?v=20260705b";
 import { renderQuickSummaryChart, renderPortfolioPerformanceChart } from "./charts.js?v=20260705b";
+
+// ─── INVESTED-CAPITAL SERIES (from the actual first purchase date) ──
+// We don't have historical market prices, so "Invested (cumulative)" is the
+// one line we CAN plot accurately all the way back to day one — built from
+// real buy-lot and sell dates. "Current Value" is layered on top from the
+// daily snapshot mechanism below (only available from when the app started
+// recording, growing forward).
+const buildInvestedSeries = (investments, allBuys, allSells) => {
+  const events = [];
+  investments.forEach(inv => {
+    (allBuys[inv.id] || []).forEach(b => {
+      if (b.date) events.push({ date: b.date, amount: (b.quantity || 0) * (b.price || 0) });
+    });
+    (allSells[inv.id] || []).forEach(s => {
+      if (s.sellDate) events.push({ date: s.sellDate, amount: -(s.quantity || 0) * (inv.avgPrice || 0) });
+    });
+  });
+  if (events.length === 0) return [];
+  events.sort((a, b) => a.date.localeCompare(b.date));
+
+  const series = [];
+  let cum = 0, idx = 0;
+  const start = new Date(events[0].date);
+  const end = new Date(todayISO());
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    while (idx < events.length && events[idx].date <= dateStr) { cum += events[idx].amount; idx++; }
+    series.push({ date: dateStr, value: Math.max(0, cum) });
+  }
+  return series;
+};
+
+const filterSeriesByRange = (series, range) => {
+  if (range === "All" || series.length === 0) return series;
+  const days = { Today: 1, "1W": 7, "1M": 30, "3M": 90, "6M": 182, "1Y": 365, "3Y": 1095 }[range] ?? 9999;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  return series.filter(p => new Date(p.date) >= cutoff);
+};
 
 // ─── OPEN QUANTITY HELPER (mirrors investments.js logic) ──────
 const openQty = (inv, allSells) => {
@@ -63,14 +101,6 @@ const recordSnapshot = (value) => {
   snaps[todayISO()] = value;
   ls.set(SNAPSHOT_KEY, snaps);
   return snaps;
-};
-
-const seriesForRange = (snaps, range) => {
-  const entries = Object.entries(snaps).sort(([a], [b]) => a.localeCompare(b));
-  if (range === "All" || entries.length === 0) return entries.map(([date, value]) => ({ date, value }));
-  const days = { Today: 1, "1W": 7, "1M": 30, "3M": 90, "6M": 182, "1Y": 365, "3Y": 1095 }[range] ?? 9999;
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-  return entries.filter(([date]) => new Date(date) >= cutoff).map(([date, value]) => ({ date, value }));
 };
 
 const todaysChange = (snaps, currentValue) => {
@@ -199,9 +229,15 @@ export const refreshDashboard = async () => {
   renderQuickSummaryChart(quickSummary);
   renderQuickSummaryList(quickSummary);
 
-  // Performance chart with active range filter
+  // Performance chart with active range filter — invested line goes back to
+  // the real first purchase date; current-value line layers on from snapshots.
   const activeRange = document.querySelector("#perf-range-filter .filter-btn.active")?.dataset.range || "1M";
-  renderPortfolioPerformanceChart(seriesForRange(snaps, activeRange));
+  const investedSeries = buildInvestedSeries(investments, getAllBuys(), allSells);
+  const valueSeries = Object.entries(snaps).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
+  renderPortfolioPerformanceChart(
+    filterSeriesByRange(investedSeries, activeRange),
+    filterSeriesByRange(valueSeries, activeRange)
+  );
 
   // Health score
   const goals = getGoalsData();
@@ -248,8 +284,15 @@ const bindPerfRangeFilter = () => {
     btn.onclick = () => {
       document.querySelectorAll("#perf-range-filter .filter-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
+      const investments = getInvestmentsData();
+      const allSells = getAllSells();
       const snaps = ls.get(SNAPSHOT_KEY, {});
-      renderPortfolioPerformanceChart(seriesForRange(snaps, btn.dataset.range));
+      const investedSeries = buildInvestedSeries(investments, getAllBuys(), allSells);
+      const valueSeries = Object.entries(snaps).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
+      renderPortfolioPerformanceChart(
+        filterSeriesByRange(investedSeries, btn.dataset.range),
+        filterSeriesByRange(valueSeries, btn.dataset.range)
+      );
     };
   });
 };
