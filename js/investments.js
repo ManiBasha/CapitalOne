@@ -11,6 +11,20 @@ import { renderInvCharts } from "./charts.js?v=20260705b";
 
 export const ASSET_TYPES = ["Equity", "Mutual Fund", "Commodity", "FD"];
 
+const CUSTOM_TYPES_KEY = "custom_asset_types";
+const getCustomTypes = () => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_TYPES_KEY)) || []; } catch { return []; }
+};
+const saveCustomTypes = (types) => {
+  try { localStorage.setItem(CUSTOM_TYPES_KEY, JSON.stringify(types)); } catch {}
+};
+export const getAllAssetTypes = () => [...ASSET_TYPES, ...getCustomTypes()];
+const addCustomType = (name) => {
+  const types = getCustomTypes();
+  if (!types.includes(name)) { types.push(name); saveCustomTypes(types); }
+};
+const slugify = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
 let _investments = [];                 // open + partially-sold holdings
 let _allSells    = {};                 // { investmentId: [sell, ...] }
 let _allBuys     = {};                 // { investmentId: [buy, ...] }
@@ -79,6 +93,82 @@ export const aggregateInvestments = (invs) => {
 };
 
 // ─── RENDER PAGE ──────────────────────────────────────────────
+// ─── FINANCIAL YEAR HELPERS (India: 1 Apr – 31 Mar) ────────────
+const fyForDate = (dateStr) => {
+  const d = new Date(dateStr);
+  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `FY ${y}-${String(y + 1).slice(2)}`;
+};
+const fyRange = (label) => {
+  const y = parseInt(label.replace("FY ", "").split("-")[0]);
+  return { from: `${y}-04-01`, to: `${y + 1}-03-31` };
+};
+
+let _dateFilter = null; // { from, to } or null (= all time)
+
+// Realized P&L within an optional date range (matched against sell date)
+const realizedInRange = (from, to) => {
+  let total = 0;
+  _investments.forEach(inv => {
+    (_allSells[inv.id] || []).forEach(sell => {
+      if (from && sell.sellDate < from) return;
+      if (to && sell.sellDate > to) return;
+      total += (sell.sellPrice - inv.avgPrice) * sell.quantity;
+    });
+  });
+  return total;
+};
+
+const populateFYOptions = () => {
+  const sel = document.getElementById("inv-fy-filter");
+  if (!sel) return;
+  const allDates = [];
+  Object.values(_allSells).forEach(sells => sells.forEach(s => s.sellDate && allDates.push(s.sellDate)));
+  Object.values(_allBuys).forEach(buys => buys.forEach(b => b.date && allDates.push(b.date)));
+  const fySet = new Set(allDates.map(fyForDate));
+  const fyList = [...fySet].sort().reverse();
+  const current = sel.value;
+  sel.innerHTML = `<option value="all">All Time</option>` + fyList.map(fy => `<option value="${fy}">${fy}</option>`).join("");
+  if (fyList.includes(current)) sel.value = current;
+};
+
+const bindInvFilters = () => {
+  const fySel = document.getElementById("inv-fy-filter");
+  const fromEl = document.getElementById("inv-date-from");
+  const toEl = document.getElementById("inv-date-to");
+
+  fySel?.addEventListener("change", () => {
+    if (fySel.value === "all") { _dateFilter = null; }
+    else { _dateFilter = fyRange(fySel.value); }
+    if (fromEl) fromEl.value = ""; if (toEl) toEl.value = "";
+    applyDateFilter();
+  });
+
+  document.getElementById("btn-apply-date-filter")?.addEventListener("click", () => {
+    const from = fromEl?.value, to = toEl?.value;
+    if (!from && !to) { toast("Pick a from/to date, or use the Financial Year dropdown", "error"); return; }
+    _dateFilter = { from: from || null, to: to || null };
+    if (fySel) fySel.value = "all";
+    applyDateFilter();
+  });
+
+  document.getElementById("btn-clear-date-filter")?.addEventListener("click", () => {
+    _dateFilter = null;
+    if (fromEl) fromEl.value = ""; if (toEl) toEl.value = "";
+    if (fySel) fySel.value = "all";
+    applyDateFilter();
+  });
+};
+
+const applyDateFilter = () => {
+  const realized = _dateFilter ? realizedInRange(_dateFilter.from, _dateFilter.to) : aggregateInvestments(_investments).realized;
+  const realEl = document.getElementById("inv-realized");
+  realEl.textContent = (realized >= 0 ? "+" : "") + formatCurrency(realized, "INR", true);
+  realEl.className = "card-value " + (realized >= 0 ? "positive" : "negative");
+  const noteEl = document.getElementById("inv-realized-note");
+  if (noteEl) noteEl.textContent = _dateFilter ? "Filtered period" : "From sold holdings";
+};
+
 export const renderInvestmentsPage = () => {
   const agg = aggregateInvestments(_investments);
 
@@ -96,12 +186,30 @@ export const renderInvestmentsPage = () => {
   renderInvCharts(_investments, _allSells);
   recordAssetClassSnapshot();
 
+  renderInvTabs();
+  populateFYOptions();
+  bindInvFilters();
+  if (_dateFilter) applyDateFilter();
+
   const activeTab = document.querySelector("#inv-tabs .tab.active")?.dataset.tab || "equity";
   renderInvTable(activeTab);
+};
 
-  document.querySelectorAll("#inv-tabs .tab").forEach(tab => {
+const renderInvTabs = () => {
+  const tabsEl = document.getElementById("inv-tabs");
+  if (!tabsEl) return;
+  const currentActive = tabsEl.querySelector(".tab.active")?.dataset.tab;
+  const allTypes = getAllAssetTypes();
+
+  tabsEl.innerHTML = allTypes.map((t, i) => {
+    const slug = slugify(t);
+    const isActive = currentActive ? currentActive === slug : i === 0;
+    return `<button class="tab ${isActive ? "active" : ""}" data-tab="${slug}">${t}</button>`;
+  }).join("");
+
+  tabsEl.querySelectorAll(".tab").forEach(tab => {
     tab.onclick = () => {
-      document.querySelectorAll("#inv-tabs .tab").forEach(t => t.classList.remove("active"));
+      tabsEl.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
       renderInvTable(tab.dataset.tab);
     };
@@ -111,11 +219,13 @@ export const renderInvestmentsPage = () => {
 // ─── DAILY SNAPSHOT BY ASSET CLASS (for the trading-style value chart) ──
 const SNAPSHOT_TYPE_KEY = "portfolio_snapshots_by_type";
 const recordAssetClassSnapshot = () => {
-  const byType = { Equity: 0, "Mutual Fund": 0, Commodity: 0, FD: 0 };
+  const byType = {};
+  getAllAssetTypes().forEach(t => byType[t] = 0);
   _investments.forEach(inv => {
     const oQty = openQty(inv);
     const val = (inv.currentPrice || inv.avgPrice) * oQty;
-    if (byType[inv.assetType] !== undefined) byType[inv.assetType] += val;
+    if (byType[inv.assetType] === undefined) byType[inv.assetType] = 0;
+    byType[inv.assetType] += val;
   });
   let snaps = {};
   try { snaps = JSON.parse(localStorage.getItem(SNAPSHOT_TYPE_KEY)) || {}; } catch { snaps = {}; }
@@ -129,15 +239,10 @@ export const getAssetClassSnapshots = () => {
 };
 
 // ─── INVESTMENT TABLE ─────────────────────────────────────────
-const TYPE_MAP = {
-  "equity":       "Equity",
-  "mutual-funds": "Mutual Fund",
-  "commodity":    "Commodity",
-  "fd":           "FD",
-};
+const buildTypeMap = () => Object.fromEntries(getAllAssetTypes().map(t => [slugify(t), t]));
 
 const renderInvTable = (tab) => {
-  const wantedType = TYPE_MAP[tab];
+  const wantedType = buildTypeMap()[tab];
   const filtered = _investments.filter(inv => (inv.assetType || "") === wantedType);
 
   const container = document.getElementById("inv-table-container");
@@ -492,8 +597,13 @@ export const openInvModal = (inv) => {
     <div class="form-row">
       <label>Asset Type</label>
       <select id="inv-m-type" class="input" ${isEdit ? "disabled" : ""}>
-        ${ASSET_TYPES.map(t => `<option value="${t}" ${inv?.assetType===t?"selected":""}>${t}</option>`).join("")}
+        ${getAllAssetTypes().map(t => `<option value="${t}" ${inv?.assetType===t?"selected":""}>${t}</option>`).join("")}
+        ${!isEdit ? `<option value="__add_new__">+ Add New Asset Type…</option>` : ""}
       </select>
+    </div>
+    <div class="form-row hidden" id="inv-m-new-type-row">
+      <label>New Asset Type Name</label>
+      <input type="text" id="inv-m-new-type" class="input" placeholder="e.g. US Stocks, Japan Stocks" />
     </div>
     <div class="form-row">
       <label>Name / Symbol</label>
@@ -543,14 +653,28 @@ export const openInvModal = (inv) => {
 
   openModal(isEdit ? "Edit Investment" : "Add Investment", body, footer);
 
+  if (!isEdit) {
+    document.getElementById("inv-m-type").addEventListener("change", (e) => {
+      document.getElementById("inv-m-new-type-row").classList.toggle("hidden", e.target.value !== "__add_new__");
+    });
+  }
+
   document.getElementById("inv-m-cancel").onclick = closeModal;
   if (isEdit) document.getElementById("inv-m-delete").onclick = () => confirmDeleteInv(inv.id);
   document.getElementById("inv-m-save").onclick = () => saveInv(inv?.id);
 };
 
 const saveInv = async (editId) => {
+  let assetType = document.getElementById("inv-m-type").value;
+  if (assetType === "__add_new__") {
+    const newTypeName = document.getElementById("inv-m-new-type")?.value.trim();
+    if (!newTypeName) { toast("Enter a name for the new asset type", "error"); return; }
+    addCustomType(newTypeName);
+    assetType = newTypeName;
+  }
+
   const data = {
-    assetType:    document.getElementById("inv-m-type").value,
+    assetType,
     name:         document.getElementById("inv-m-name").value.trim(),
     isin:         document.getElementById("inv-m-isin").value.trim(),
     currentPrice: parseFloat(document.getElementById("inv-m-current").value) || 0,
