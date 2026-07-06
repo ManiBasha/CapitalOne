@@ -534,6 +534,13 @@ body {
 }
 .section-title.small { font-size: 0.72rem; }
 
+.charges-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-sm);
+}
+.charges-grid .form-row { margin-bottom: 0; }
+
 /* ============================
    TRANSACTIONS LIST
    ============================ */
