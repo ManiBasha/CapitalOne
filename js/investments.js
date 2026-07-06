@@ -8,7 +8,7 @@ import {
 } from "./database.js?v=20260705b";
 import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal, pct } from "./utils.js?v=20260705b";
 import { renderInvCharts } from "./charts.js?v=20260705b";
-import { computeFIFOMatches, calcEquityCharges, calcMFCharges, calcGenericCharges } from "./fifo.js?v=20260705b";
+import { computeFIFOMatches, calcEquityCharges, calcMFCharges, calcCommodityCharges, calcGenericCharges } from "./fifo.js?v=20260705b";
 
 export const ASSET_TYPES = ["Equity", "Mutual Fund", "Commodity", "FD"];
 
@@ -356,18 +356,28 @@ const openHistoryModal = (inv) => {
   const buys  = (_allBuys[inv.id]  || []).map(b => ({ ...b, _kind: "Buy",  _date: b.date,     _qty: b.quantity, _price: b.price }));
   const sells = (_allSells[inv.id] || []).map(s => ({ ...s, _kind: "Sell", _date: s.sellDate, _qty: s.quantity, _price: s.sellPrice }));
   const all = [...buys, ...sells].sort((a, b) => new Date(a._date) - new Date(b._date));
+  const fifoMatches = getFIFOMatchesForInvestment(inv);
 
   const rows = all.length === 0
-    ? `<tr><td colspan="6" class="muted" style="text-align:center;padding:1rem">No recorded lots yet</td></tr>`
+    ? `<tr><td colspan="7" class="muted" style="text-align:center;padding:1rem">No recorded lots yet</td></tr>`
     : all.map(item => {
         const isBuy = item._kind === "Buy";
-        const pnl = isBuy ? null : (item._price - inv.avgPrice) * item._qty;
+        const charges = item.charges?.total || 0;
+        let pnl = null, holdingNote = "";
+        if (!isBuy) {
+          const matchesForSell = fifoMatches.filter(m => m.sellId === item.id);
+          pnl = matchesForSell.reduce((s, m) => s + m.netGain, 0);
+          const hasLT = matchesForSell.some(m => m.isLongTerm);
+          const hasST = matchesForSell.some(m => !m.isLongTerm);
+          holdingNote = hasLT && hasST ? "STCG+LTCG" : hasLT ? "LTCG" : hasST ? "STCG" : "";
+        }
         return `<tr>
           <td>${formatDate(item._date)}</td>
           <td><span class="badge ${isBuy ? "badge-positive" : "badge-negative"}">${item._kind}</span></td>
           <td>${item._qty}</td>
           <td>${formatCurrency(item._price)}</td>
-          <td>${pnl===null ? "—" : `<span class="${pnl>=0?"positive":"negative"}">${pnl>=0?"+":""}${formatCurrency(pnl)}</span>`}</td>
+          <td>${formatCurrency(charges)}</td>
+          <td>${pnl===null ? "—" : `<span class="${pnl>=0?"positive":"negative"}">${pnl>=0?"+":""}${formatCurrency(pnl)}</span> ${holdingNote ? `<span class="muted" style="font-size:0.68rem">(${holdingNote})</span>` : ""}`}</td>
           <td><button class="btn btn-danger btn-sm" data-del-${isBuy?"buy":"sell"}="${item.id}">×</button></td>
         </tr>`;
       }).join("");
@@ -383,7 +393,7 @@ const openHistoryModal = (inv) => {
     </div>
     <div class="inv-table-wrap" style="max-height:360px;overflow-y:auto">
       <table class="inv-table">
-        <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Realized P&amp;L</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Price</th><th>Charges</th><th>Realized P&amp;L (FIFO, net)</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -507,15 +517,17 @@ const openSellModal = (inv) => {
   const sellHistoryHTML = sells.length === 0 ? "" : `
     <div class="section-title small" style="margin-top:1rem">Sell History</div>
     <table class="inv-table" style="margin-top:0.5rem">
-      <thead><tr><th>Date</th><th>Qty</th><th>Sell Price</th><th>Realized P&L</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Qty</th><th>Sell Price</th><th>Charges</th><th>Realized P&L (net)</th><th></th></tr></thead>
       <tbody>
         ${sells.map(sl => {
-          const pnl = (sl.sellPrice - inv.avgPrice) * sl.quantity;
+          const chg = sl.charges?.total || 0;
+          const pnl = (sl.sellPrice - inv.avgPrice) * sl.quantity - chg;
           const cls = pnl >= 0 ? "positive" : "negative";
           return `<tr>
             <td>${formatDate(sl.sellDate)}</td>
             <td>${sl.quantity}</td>
             <td>${formatCurrency(sl.sellPrice)}</td>
+            <td>${formatCurrency(chg)}</td>
             <td class="${cls}">${pnl>=0?"+":""}${formatCurrency(pnl)}</td>
             <td><button class="btn btn-danger btn-sm" data-del-sell="${sl.id}">×</button></td>
           </tr>`;
@@ -544,6 +556,9 @@ const openSellModal = (inv) => {
       <input type="text" id="sell-notes" class="input" placeholder="e.g. Partial profit booking" />
     </div>
     <div id="sell-pnl-preview" style="margin-top:var(--sp-sm)"></div>
+    <div class="section-title small" style="margin-top:1rem">Charges</div>
+    <div id="sell-charges-fields">${chargesFieldsHTML(inv.assetType, "sell")}</div>
+    <div id="sell-charges-preview"></div>
     ${sellHistoryHTML}`;
 
   const footer = `
@@ -551,21 +566,25 @@ const openSellModal = (inv) => {
     <button class="btn btn-primary" id="sell-confirm">Record Sale</button>`;
 
   openModal(`Sell — ${inv.name}`, body, footer);
+  prefillChargeDefaults(inv.assetType, "sell");
+  bindChargesLivePreview(inv.assetType, "sell", "sell-qty", "sell-price", "sell-charges-preview");
 
   const updatePreview = () => {
     const qty   = parseFloat(document.getElementById("sell-qty")?.value) || 0;
     const price = parseFloat(document.getElementById("sell-price")?.value) || 0;
     const el    = document.getElementById("sell-pnl-preview");
     if (!el || qty <= 0 || price <= 0) { if(el) el.innerHTML = ""; return; }
-    const pnl = (price - inv.avgPrice) * qty;
+    const charges = readChargesFromFields(inv.assetType, "sell", qty, price);
+    const pnl = (price - inv.avgPrice) * qty - charges.total;
     const cls = pnl >= 0 ? "positive" : "negative";
     el.innerHTML = `<div class="tax-highlight">
-      Estimated Realized P&L: <strong class="${cls}">${pnl>=0?"+":""}${formatCurrency(pnl)}</strong>
+      Estimated Realized P&L (net of charges): <strong class="${cls}">${pnl>=0?"+":""}${formatCurrency(pnl)}</strong>
       &nbsp;·&nbsp; Proceeds: ${formatCurrency(price * qty)}
     </div>`;
   };
   document.getElementById("sell-qty")?.addEventListener("input", updatePreview);
   document.getElementById("sell-price")?.addEventListener("input", updatePreview);
+  document.querySelectorAll("#sell-charges-fields input, #chg-trade-type").forEach(el => el.addEventListener("input", updatePreview));
 
   document.querySelectorAll("[data-del-sell]").forEach(btn => {
     btn.onclick = async () => {
@@ -585,12 +604,13 @@ const openSellModal = (inv) => {
     const price    = parseFloat(document.getElementById("sell-price").value) || 0;
     const sellDate = document.getElementById("sell-date").value;
     const notes    = document.getElementById("sell-notes").value.trim();
+    const charges  = readChargesFromFields(inv.assetType, "sell", qty, price);
 
     if (qty <= 0) { toast("Enter quantity to sell", "error"); return; }
     if (qty > available) { toast(`Only ${available} units available`, "error"); return; }
     if (price <= 0)  { toast("Enter a valid sell price", "error"); return; }
 
-    await addSellTrade(inv.id, { quantity: qty, sellPrice: price, sellDate, notes });
+    await addSellTrade(inv.id, { quantity: qty, sellPrice: price, sellDate, notes, charges });
 
     if (qty >= available) {
       await saveInvestment(inv.id, { fullyExited: true, exitDate: sellDate });
@@ -632,9 +652,20 @@ const chargesFieldsHTML = (assetType, side) => {
            <div class="form-row"><label>Stamp Duty %</label><input type="number" id="chg-stampduty" class="input" step="0.001" /></div>
            <div class="form-row"><label>Expense Ratio % <span class="muted" style="font-weight:400">(informational)</span></label><input type="number" id="chg-expenseratio" class="input" step="0.01" /></div>
          </div>`
-      : `<div class="form-row"><label>Exit Load %</label><input type="number" id="chg-exitload" class="input" step="0.01" /></div>`;
+      : `<div class="form-row"><label>Exit Load %</label><input type="number" id="chg-exitload" class="input" step="0.01" /></div>
+         <div class="form-row"><label>Other Sell Charges (₹)</label><input type="number" id="chg-other" class="input" step="0.01" value="0" /></div>`;
   }
-  return `<div class="form-row"><label>Other Charges (₹)</label><input type="number" id="chg-other" class="input" step="0.01" value="0" /></div>`;
+  if (assetType === "Commodity") {
+    return `
+      <div class="charges-grid">
+        <div class="form-row"><label>Brokerage (₹)</label><input type="number" id="chg-brokerage" class="input" step="0.01" value="0" /></div>
+        <div class="form-row"><label>GST %</label><input type="number" id="chg-gst" class="input" step="0.1" value="18" /></div>
+        ${side === "sell" ? `<div class="form-row"><label>DP Charge (₹)</label><input type="number" id="chg-dpcharge" class="input" step="0.01" value="0" /></div>` : ""}
+        <div class="form-row"><label>Other Charges (₹)</label><input type="number" id="chg-other" class="input" step="0.01" value="0" /></div>
+      </div>`;
+  }
+  // FD and any custom asset type — generic charges, still present on both buy and sell
+  return `<div class="form-row"><label>${side === "sell" ? "Sell " : ""}Other Charges (₹)</label><input type="number" id="chg-other" class="input" step="0.01" value="0" /></div>`;
 };
 
 const prefillChargeDefaults = (assetType, side) => {
@@ -679,7 +710,21 @@ const readChargesFromFields = (assetType, side, qty, price) => {
     const overrides = side === "buy"
       ? { stampDutyPct: parseFloat(document.getElementById("chg-stampduty")?.value) || 0, expenseRatioPct: parseFloat(document.getElementById("chg-expenseratio")?.value) || 0 }
       : { exitLoadPct: parseFloat(document.getElementById("chg-exitload")?.value) || 0 };
-    return calcMFCharges(turnover, side, overrides);
+    const mfCharges = calcMFCharges(turnover, side, overrides);
+    if (side === "sell") {
+      const other = parseFloat(document.getElementById("chg-other")?.value) || 0;
+      return { ...mfCharges, otherCharges: other, total: mfCharges.total + other };
+    }
+    return mfCharges;
+  }
+  if (assetType === "Commodity") {
+    const overrides = {
+      brokerage:    parseFloat(document.getElementById("chg-brokerage")?.value) || 0,
+      gstPct:       parseFloat(document.getElementById("chg-gst")?.value) || 0,
+      dpCharge:     parseFloat(document.getElementById("chg-dpcharge")?.value) || 0,
+      otherCharges: parseFloat(document.getElementById("chg-other")?.value) || 0,
+    };
+    return calcCommodityCharges(side, overrides);
   }
   return calcGenericCharges({ otherCharges: parseFloat(document.getElementById("chg-other")?.value) || 0 });
 };
