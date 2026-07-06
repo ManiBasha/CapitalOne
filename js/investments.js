@@ -8,6 +8,7 @@ import {
 } from "./database.js?v=20260705b";
 import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal, pct } from "./utils.js?v=20260705b";
 import { renderInvCharts } from "./charts.js?v=20260705b";
+import { computeFIFOMatches, calcEquityCharges, calcMFCharges, calcGenericCharges } from "./fifo.js?v=20260705b";
 
 export const ASSET_TYPES = ["Equity", "Mutual Fund", "Commodity", "FD"];
 
@@ -60,34 +61,52 @@ export const getAllSells = () => _allSells;
 export const getAllBuys  = () => _allBuys;
 
 // ─── P&L HELPERS ──────────────────────────────────────────────
-const realizedForHolding = (inv) => {
+// ─── FIFO SUMMARY PER HOLDING ───────────────────────────────────
+// Single source of truth: FIFO-matches every sell against the oldest buy
+// lots first, so realized P&L is net of charges AND each match carries the
+// correct holding period (needed for STCG/LTCG). Open quantity/cost basis
+// comes from whatever buy lots remain unconsumed.
+const fifoSummaryForHolding = (inv) => {
+  const buys = _allBuys[inv.id] || [];
   const sells = _allSells[inv.id] || [];
-  return sells.reduce((s, sell) => s + (sell.sellPrice - inv.avgPrice) * sell.quantity, 0);
+  const { matches, remainingBuyLots } = computeFIFOMatches(buys, sells);
+  const openQty = remainingBuyLots.reduce((s, l) => s + l.remaining, 0);
+  const openCost = remainingBuyLots.reduce((s, l) => s + l.remaining * l.price, 0);
+  const avgOpenPrice = openQty > 0 ? openCost / openQty : (inv.avgPrice || 0);
+  const realizedNet = matches.reduce((s, m) => s + m.netGain, 0);
+  return { matches, remainingBuyLots, openQty, openCost, avgOpenPrice, realizedNet };
 };
 
-// Remaining open quantity after all sells
-const openQty = (inv) => {
-  const sells = _allSells[inv.id] || [];
-  const soldQty = sells.reduce((s, sell) => s + sell.quantity, 0);
-  return Math.max(0, (inv.quantity || 0) - soldQty);
+export const getFIFOMatchesForInvestment = (inv) => fifoSummaryForHolding(inv).matches;
+export const getAllFIFOMatches = () => {
+  const all = [];
+  _investments.forEach(inv => {
+    fifoSummaryForHolding(inv).matches.forEach(m => all.push({ ...m, investment: inv }));
+  });
+  return all;
 };
+
+const realizedForHolding = (inv) => fifoSummaryForHolding(inv).realizedNet;
+
+// Remaining open quantity after all sells (FIFO-consistent)
+const openQty = (inv) => fifoSummaryForHolding(inv).openQty;
 
 const unrealizedForHolding = (inv) => {
-  const qty = openQty(inv);
-  return ((inv.currentPrice || inv.avgPrice) - inv.avgPrice) * qty;
+  const { openQty: qty, avgOpenPrice } = fifoSummaryForHolding(inv);
+  return ((inv.currentPrice || inv.avgPrice) - avgOpenPrice) * qty;
 };
 
 // ─── PAGE AGGREGATES ──────────────────────────────────────────
 // "Total Invested" reflects only what's still actually invested (open
-// quantity) — money already returned via a sale is no longer "invested".
+// FIFO lots) — money already returned via a sale is no longer "invested".
 export const aggregateInvestments = (invs) => {
   let totalInvested = 0, currentValue = 0, realized = 0, unrealized = 0;
   for (const inv of invs) {
-    const oQty = openQty(inv);
-    totalInvested += (inv.avgPrice * oQty) || 0;
-    currentValue  += (inv.currentPrice || inv.avgPrice) * oQty;
-    realized      += realizedForHolding(inv);
-    unrealized    += unrealizedForHolding(inv);
+    const fifo = fifoSummaryForHolding(inv);
+    totalInvested += fifo.openCost || 0;
+    currentValue  += (inv.currentPrice || inv.avgPrice) * fifo.openQty;
+    realized      += fifo.realizedNet;
+    unrealized    += ((inv.currentPrice || inv.avgPrice) - fifo.avgOpenPrice) * fifo.openQty;
   }
   return { totalInvested, currentValue, realized, unrealized };
 };
@@ -106,14 +125,15 @@ const fyRange = (label) => {
 
 let _dateFilter = null; // { from, to } or null (= all time)
 
-// Realized P&L within an optional date range (matched against sell date)
+// Realized P&L within an optional date range (matched against sell date),
+// using FIFO-matched net-of-charges gains.
 const realizedInRange = (from, to) => {
   let total = 0;
   _investments.forEach(inv => {
-    (_allSells[inv.id] || []).forEach(sell => {
-      if (from && sell.sellDate < from) return;
-      if (to && sell.sellDate > to) return;
-      total += (sell.sellPrice - inv.avgPrice) * sell.quantity;
+    fifoSummaryForHolding(inv).matches.forEach(m => {
+      if (from && m.sellDate < from) return;
+      if (to && m.sellDate > to) return;
+      total += m.netGain;
     });
   });
   return total;
@@ -255,11 +275,12 @@ const renderInvTable = (tab) => {
   }
 
   const rows = filtered.map(inv => {
-    const oQty       = openQty(inv);
-    const invested   = inv.avgPrice * oQty;
+    const fifo       = fifoSummaryForHolding(inv);
+    const oQty       = fifo.openQty;
+    const invested   = fifo.openCost;
     const curVal     = (inv.currentPrice || inv.avgPrice) * oQty;
-    const unreal     = unrealizedForHolding(inv);
-    const real       = realizedForHolding(inv);
+    const unreal     = ((inv.currentPrice || inv.avgPrice) - fifo.avgOpenPrice) * oQty;
+    const real       = fifo.realizedNet;
     const unrCls     = unreal >= 0 ? "positive" : "negative";
     const realCls    = real  >= 0 ? "positive" : "negative";
     const sells      = _allSells[inv.id] || [];
@@ -276,7 +297,7 @@ const renderInvTable = (tab) => {
           <span title="Open qty">${oQty}</span>
           ${soldQty > 0 ? `<div class="muted" style="font-size:0.7rem">${soldQty} sold</div>` : ""}
         </td>
-        <td>${formatCurrency(inv.avgPrice)}</td>
+        <td>${formatCurrency(fifo.avgOpenPrice)}</td>
         <td>${formatCurrency(inv.currentPrice||inv.avgPrice)}</td>
         <td>${formatCurrency(invested)}</td>
         <td>${formatCurrency(curVal)}</td>
@@ -429,13 +450,18 @@ const openBuyMoreModal = (inv) => {
       <label>Notes (optional)</label>
       <input type="text" id="buy-notes" class="input" placeholder="e.g. Monthly SIP" />
     </div>
-    <div id="buy-avg-preview" style="margin-top:var(--sp-sm)"></div>`;
+    <div id="buy-avg-preview" style="margin-top:var(--sp-sm)"></div>
+    <div class="section-title small" style="margin-top:1rem">Charges</div>
+    <div id="buy-charges-fields">${chargesFieldsHTML(inv.assetType, "buy")}</div>
+    <div id="buy-charges-preview"></div>`;
 
   const footer = `
     <button class="btn btn-ghost" id="buy-cancel">Cancel</button>
     <button class="btn btn-primary" id="buy-confirm">Add to Holding</button>`;
 
   openModal(`Buy More — ${inv.name}`, body, footer);
+  prefillChargeDefaults(inv.assetType, "buy");
+  bindChargesLivePreview(inv.assetType, "buy", "buy-qty", "buy-price", "buy-charges-preview");
 
   const updatePreview = () => {
     const qty   = parseFloat(document.getElementById("buy-qty")?.value) || 0;
@@ -457,11 +483,12 @@ const openBuyMoreModal = (inv) => {
     const price = parseFloat(document.getElementById("buy-price").value) || 0;
     const date  = document.getElementById("buy-date").value;
     const notes = document.getElementById("buy-notes").value.trim();
+    const charges = readChargesFromFields(inv.assetType, "buy", qty, price);
 
     if (qty <= 0)   { toast("Enter a quantity", "error"); return; }
     if (price <= 0) { toast("Enter a valid price", "error"); return; }
 
-    await addBuyLot(inv.id, { quantity: qty, price, date, notes });
+    await addBuyLot(inv.id, { quantity: qty, price, date, notes, charges });
     await recalcFromBuyLots(inv.id);
 
     toast("Purchase added — average buy price updated", "success");
@@ -577,6 +604,107 @@ const openSellModal = (inv) => {
   };
 };
 
+// ─── CHARGES UI (shared across Add / Buy More / Sell modals) ──────
+const chargesFieldsHTML = (assetType, side) => {
+  if (assetType === "Equity") {
+    return `
+      <div class="form-row">
+        <label>Trade Type</label>
+        <select id="chg-trade-type" class="input">
+          <option value="Delivery">Delivery</option>
+          <option value="Intraday">Intraday</option>
+        </select>
+      </div>
+      <div class="charges-grid">
+        <div class="form-row"><label>Brokerage (₹)</label><input type="number" id="chg-brokerage" class="input" step="0.01" /></div>
+        <div class="form-row"><label>STT %</label><input type="number" id="chg-stt" class="input" step="0.001" /></div>
+        <div class="form-row"><label>Exchange Charges %</label><input type="number" id="chg-exchange" class="input" step="0.0001" /></div>
+        <div class="form-row"><label>SEBI Charges %</label><input type="number" id="chg-sebi" class="input" step="0.0001" /></div>
+        <div class="form-row"><label>GST %</label><input type="number" id="chg-gst" class="input" step="0.1" /></div>
+        ${side === "buy"
+          ? `<div class="form-row"><label>Stamp Duty %</label><input type="number" id="chg-stampduty" class="input" step="0.001" /></div>`
+          : `<div class="form-row"><label>DP Charge (₹)</label><input type="number" id="chg-dpcharge" class="input" step="0.01" /></div>`}
+      </div>`;
+  }
+  if (assetType === "Mutual Fund") {
+    return side === "buy"
+      ? `<div class="charges-grid">
+           <div class="form-row"><label>Stamp Duty %</label><input type="number" id="chg-stampduty" class="input" step="0.001" /></div>
+           <div class="form-row"><label>Expense Ratio % <span class="muted" style="font-weight:400">(informational)</span></label><input type="number" id="chg-expenseratio" class="input" step="0.01" /></div>
+         </div>`
+      : `<div class="form-row"><label>Exit Load %</label><input type="number" id="chg-exitload" class="input" step="0.01" /></div>`;
+  }
+  return `<div class="form-row"><label>Other Charges (₹)</label><input type="number" id="chg-other" class="input" step="0.01" value="0" /></div>`;
+};
+
+const prefillChargeDefaults = (assetType, side) => {
+  if (assetType === "Equity") {
+    const tradeSel = document.getElementById("chg-trade-type");
+    const applyDefaults = () => {
+      const key = tradeSel.value === "Intraday"
+        ? (side === "buy" ? "equityIntradayBuy" : "equityIntradaySell")
+        : (side === "buy" ? "equityDeliveryBuy" : "equityDeliverySell");
+      const d = CHARGE_DEFAULTS_REF[key];
+      if (document.getElementById("chg-brokerage")) document.getElementById("chg-brokerage").value = d.brokerage || 0;
+      if (document.getElementById("chg-stt")) document.getElementById("chg-stt").value = d.sttPct || 0;
+      if (document.getElementById("chg-exchange")) document.getElementById("chg-exchange").value = d.exchangePct || 0;
+      if (document.getElementById("chg-sebi")) document.getElementById("chg-sebi").value = d.sebiPct || 0;
+      if (document.getElementById("chg-gst")) document.getElementById("chg-gst").value = d.gstPct || 0;
+      if (document.getElementById("chg-stampduty")) document.getElementById("chg-stampduty").value = d.stampDutyPct || 0;
+      if (document.getElementById("chg-dpcharge")) document.getElementById("chg-dpcharge").value = d.dpCharge || 0;
+    };
+    applyDefaults();
+    tradeSel?.addEventListener("change", applyDefaults);
+  } else if (assetType === "Mutual Fund") {
+    if (document.getElementById("chg-stampduty")) document.getElementById("chg-stampduty").value = CHARGE_DEFAULTS_REF.mfBuy.stampDutyPct;
+  }
+};
+
+const readChargesFromFields = (assetType, side, qty, price) => {
+  const turnover = (qty || 0) * (price || 0);
+  if (assetType === "Equity") {
+    const tradeType = document.getElementById("chg-trade-type")?.value || "Delivery";
+    const overrides = {
+      brokerage:    parseFloat(document.getElementById("chg-brokerage")?.value) || 0,
+      sttPct:       parseFloat(document.getElementById("chg-stt")?.value) || 0,
+      exchangePct:  parseFloat(document.getElementById("chg-exchange")?.value) || 0,
+      sebiPct:      parseFloat(document.getElementById("chg-sebi")?.value) || 0,
+      gstPct:       parseFloat(document.getElementById("chg-gst")?.value) || 0,
+      stampDutyPct: parseFloat(document.getElementById("chg-stampduty")?.value) || 0,
+      dpCharge:     parseFloat(document.getElementById("chg-dpcharge")?.value) || 0,
+    };
+    return { ...calcEquityCharges(turnover, side, tradeType, overrides), tradeType };
+  }
+  if (assetType === "Mutual Fund") {
+    const overrides = side === "buy"
+      ? { stampDutyPct: parseFloat(document.getElementById("chg-stampduty")?.value) || 0, expenseRatioPct: parseFloat(document.getElementById("chg-expenseratio")?.value) || 0 }
+      : { exitLoadPct: parseFloat(document.getElementById("chg-exitload")?.value) || 0 };
+    return calcMFCharges(turnover, side, overrides);
+  }
+  return calcGenericCharges({ otherCharges: parseFloat(document.getElementById("chg-other")?.value) || 0 });
+};
+
+const bindChargesLivePreview = (assetType, side, qtyElId, priceElId, previewElId) => {
+  const update = () => {
+    const qty = parseFloat(document.getElementById(qtyElId)?.value) || 0;
+    const price = parseFloat(document.getElementById(priceElId)?.value) || 0;
+    const charges = readChargesFromFields(assetType, side, qty, price);
+    const el = document.getElementById(previewElId);
+    if (el) el.innerHTML = `<div class="tax-highlight">Total Charges: <strong>${formatCurrency(charges.total)}</strong></div>`;
+  };
+  document.querySelectorAll(`#${qtyElId}, #${priceElId}, .charges-grid input, #chg-trade-type, #chg-other, #chg-exitload`).forEach(el => el?.addEventListener("input", update));
+  document.getElementById("chg-trade-type")?.addEventListener("change", update);
+  update();
+};
+
+const CHARGE_DEFAULTS_REF = {
+  equityDeliveryBuy:  { brokerage: 0,  sttPct: 0.1,   exchangePct: 0.00297, sebiPct: 0.0001, gstPct: 18, stampDutyPct: 0.015, dpCharge: 0 },
+  equityDeliverySell: { brokerage: 0,  sttPct: 0.1,   exchangePct: 0.00297, sebiPct: 0.0001, gstPct: 18, stampDutyPct: 0,     dpCharge: 18.75 },
+  equityIntradayBuy:  { brokerage: 20, sttPct: 0,     exchangePct: 0.00297, sebiPct: 0.0001, gstPct: 18, stampDutyPct: 0.003, dpCharge: 0 },
+  equityIntradaySell: { brokerage: 20, sttPct: 0.025, exchangePct: 0.00297, sebiPct: 0.0001, gstPct: 18, stampDutyPct: 0,     dpCharge: 0 },
+  mfBuy: { stampDutyPct: 0.005 },
+};
+
 // ─── FIND MATCHING HOLDING (for buy-more-as-new-entry averaging) ──
 // Same Name + Asset Type + Broker + Sector (case-insensitive) = one holding.
 const findMatchingHolding = (data) => {
@@ -644,7 +772,12 @@ export const openInvModal = (inv) => {
       <label>Notes</label>
       <input type="text" id="inv-m-notes" class="input" placeholder="Optional" value="${inv?.notes||""}" />
     </div>
-    ${!isEdit ? `<div class="muted" style="font-size:0.72rem">If Name + Asset Type + Broker + Sector match an existing holding, this will be added as another purchase (averaged in) instead of a new row.</div>` : ""}`;
+    ${!isEdit ? `
+      <div class="section-title small" style="margin-top:1rem">Charges</div>
+      <div id="inv-m-charges-fields">${chargesFieldsHTML(inv?.assetType || getAllAssetTypes()[0], "buy")}</div>
+      <div id="inv-m-charges-preview"></div>
+    ` : ""}
+    ${!isEdit ? `<div class="muted" style="font-size:0.72rem;margin-top:0.5rem">If Name + Asset Type + Broker + Sector match an existing holding, this will be added as another purchase (averaged in) instead of a new row.</div>` : ""}`;
 
   const footer = `
     ${isEdit ? `<button class="btn btn-danger btn-sm" id="inv-m-delete">Delete</button>` : ""}
@@ -654,9 +787,18 @@ export const openInvModal = (inv) => {
   openModal(isEdit ? "Edit Investment" : "Add Investment", body, footer);
 
   if (!isEdit) {
+    const refreshCharges = () => {
+      const type = document.getElementById("inv-m-type").value;
+      const actualType = type === "__add_new__" ? (document.getElementById("inv-m-new-type")?.value || "Other") : type;
+      document.getElementById("inv-m-charges-fields").innerHTML = chargesFieldsHTML(actualType, "buy");
+      prefillChargeDefaults(actualType, "buy");
+      bindChargesLivePreview(actualType, "buy", "inv-m-qty", "inv-m-avg", "inv-m-charges-preview");
+    };
     document.getElementById("inv-m-type").addEventListener("change", (e) => {
       document.getElementById("inv-m-new-type-row").classList.toggle("hidden", e.target.value !== "__add_new__");
+      refreshCharges();
     });
+    refreshCharges();
   }
 
   document.getElementById("inv-m-cancel").onclick = closeModal;
@@ -685,6 +827,7 @@ const saveInv = async (editId) => {
   const qty   = parseFloat(document.getElementById("inv-m-qty").value) || 0;
   const price = parseFloat(document.getElementById("inv-m-avg").value) || 0;
   const date  = document.getElementById("inv-m-date").value;
+  const charges = !editId ? readChargesFromFields(assetType, "buy", qty, price) : null;
 
   try {
     if (editId) {
@@ -697,13 +840,13 @@ const saveInv = async (editId) => {
 
       const match = findMatchingHolding(data);
       if (match) {
-        await addBuyLot(match.id, { quantity: qty, price, date, notes: data.notes });
+        await addBuyLot(match.id, { quantity: qty, price, date, notes: data.notes, charges });
         await recalcFromBuyLots(match.id);
         if (data.currentPrice) await saveInvestment(match.id, { currentPrice: data.currentPrice, isin: data.isin || match.isin });
         toast(`Added to existing ${match.name} holding — averaged in`, "success");
       } else {
         const newId = await saveInvestment(null, { ...data, quantity: qty, avgPrice: price, purchaseDate: date });
-        await addBuyLot(newId, { quantity: qty, price, date, notes: data.notes });
+        await addBuyLot(newId, { quantity: qty, price, date, notes: data.notes, charges });
       }
     }
 
