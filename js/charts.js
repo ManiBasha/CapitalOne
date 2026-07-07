@@ -19,13 +19,31 @@ const destroyChart = (id) => {
 
 const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
+// Shared legend generator for doughnut/pie charts — appends each slice's
+// share of the total (e.g. "Equity  45.2%") instead of the plain label.
+const percentLegend = () => ({
+  generateLabels: (chart) => {
+    const data = chart.data;
+    if (!data.labels?.length || !data.datasets?.length) return [];
+    const values = data.datasets[0].data;
+    const total = values.reduce((s, v) => s + (v || 0), 0) || 1;
+    return data.labels.map((label, i) => ({
+      text: `${label}  ${((values[i] / total) * 100).toFixed(1)}%`,
+      fillStyle: data.datasets[0].backgroundColor[i],
+      strokeStyle: data.datasets[0].borderColor,
+      lineWidth: data.datasets[0].borderWidth,
+      index: i,
+    }));
+  }
+});
+
 const gridColor  = () => isDark() ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.06)";
 const textColor  = () => isDark() ? "#a8b887" : "#6b7280";
 const fontFamily = "'Inter', sans-serif";
 
 const baseOptions = () => ({
   responsive: true,
-  maintainAspectRatio: true,
+  maintainAspectRatio: false,
   plugins: {
     legend: {
       labels: { color: textColor(), font: { family: fontFamily, size: 12 } }
@@ -63,7 +81,7 @@ export const renderAssetAllocChart = (assets) => {
     options: {
       ...baseOptions(),
       scales: {},
-      plugins: { ...baseOptions().plugins, legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } } }
+      legend: { position: "bottom", labels: { ...percentLegend(), color: textColor(), font: { family: fontFamily, size: 11 } } }
     }
   });
 };
@@ -131,7 +149,7 @@ export const renderInvCharts = (investments, allSells = {}) => {
         ...baseOptions(), scales: {},
         plugins: {
           ...baseOptions().plugins,
-          legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } }
+          legend: { position: "bottom", labels: { ...percentLegend(), color: textColor(), font: { family: fontFamily, size: 11 } } }
         }
       }
     });
@@ -264,7 +282,7 @@ export const renderQuickSummaryChart = (breakdown) => {
       ...baseOptions(), scales: {},
       plugins: {
         ...baseOptions().plugins,
-        legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } }
+        legend: { position: "bottom", labels: { ...percentLegend(), color: textColor(), font: { family: fontFamily, size: 11 } } }
       }
     }
   });
@@ -394,7 +412,7 @@ const renderGenericAllocDoughnut = (canvasId, chartKey, groups) => {
       ...baseOptions(), scales: {},
       plugins: {
         ...baseOptions().plugins,
-        legend: { position: "bottom", labels: { color: textColor(), font: { family: fontFamily, size: 11 } } }
+        legend: { position: "bottom", labels: { ...percentLegend(), color: textColor(), font: { family: fontFamily, size: 11 } } }
       }
     }
   });
