@@ -2,6 +2,7 @@
 // js/tax.js  – Indian Income Tax Calculator (FY 2025-26)
 // ============================================================
 import { formatCurrency, toast } from "./utils.js?v=20260705b";
+import { computeCapitalGainsSummary } from "./capitalgains.js?v=20260705b";
 
 export const initTax = () => {
   document.getElementById("btn-calc-tax")?.addEventListener("click", calculateTax);
@@ -16,6 +17,10 @@ export const initTax = () => {
 
   // Default: hide old-regime fields (new regime selected)
   document.getElementById("old-regime-fields").style.display = "none";
+
+  // Live capital-gains preview whenever the FY changes
+  document.getElementById("tax-fy")?.addEventListener("change", renderCapGainsPreview);
+  renderCapGainsPreview();
 };
 
 // ─── SLAB CALCULATORS ────────────────────────────────────────
@@ -88,6 +93,61 @@ const addSurchargeAndCess = (tax, income) => {
   return tax + surcharge + cess;
 };
 
+// ─── CAPITAL GAINS PREVIEW (auto, from actual Investments data) ──
+export const renderCapGainsPreview = () => {
+  const fy = document.getElementById("tax-fy")?.value || "2025-26";
+  const el = document.getElementById("tax-capgains-preview");
+  if (!el) return;
+
+  const cg = computeCapitalGainsSummary(fy);
+
+  if (cg.matchCount === 0) {
+    el.innerHTML = `<div class="muted" style="font-size:0.8rem">No sales recorded in FY ${fy} yet — capital gains will appear here automatically once you sell an investment.</div>`;
+    return;
+  }
+
+  const holdingsRows = cg.holdings.map(h => {
+    const bucket = h.stcgGain !== 0 ? "STCG" : h.ltcgGain !== 0 ? "LTCG" : "Slab";
+    return `<tr>
+      <td>${h.investment.name}</td>
+      <td>${h.investment.assetType}</td>
+      <td>${bucket}</td>
+      <td>${formatCurrency(h.charges)}</td>
+      <td class="${h.netGain>=0?"positive":"negative"}">${h.netGain>=0?"+":""}${formatCurrency(h.netGain)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="result-row"><span class="result-label">STCG Gains (Equity, ≤365 days)</span><span class="result-val">${formatCurrency(cg.stcgGains)}</span></div>
+    <div class="result-row"><span class="result-label">STCG Tax @ 20%</span><span class="result-val">${formatCurrency(cg.stcgTax)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Gains (Equity, &gt;365 days)</span><span class="result-val">${formatCurrency(cg.ltcgGains)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Exemption Used</span><span class="result-val">${formatCurrency(Math.min(cg.ltcgGains, 125000))}</span></div>
+    <div class="result-row"><span class="result-label">Taxable LTCG</span><span class="result-val">${formatCurrency(cg.ltcgTaxableBase)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Tax @ 12.5%</span><span class="result-val">${formatCurrency(cg.ltcgTax)}</span></div>
+    <div class="result-row"><span class="result-label">Slab-Taxed Gains (Gold/Debt/Commodity)</span><span class="result-val">${formatCurrency(cg.slabGains)}</span></div>
+    <div class="tax-highlight" style="margin-top:0.5rem">
+      Total Capital Gains Tax (STCG+LTCG): <strong>${formatCurrency(cg.totalCapGainsTax)}</strong>
+      <div class="muted" style="font-size:0.72rem;margin-top:2px">Slab-taxed gains are added to your income below instead.</div>
+    </div>
+    <details style="margin-top:0.75rem">
+      <summary class="muted" style="cursor:pointer;font-size:0.8rem">Which holdings contributed (${cg.holdings.length})</summary>
+      <div class="inv-table-wrap" style="margin-top:0.5rem">
+        <table class="inv-table">
+          <thead><tr><th>Name</th><th>Type</th><th>Bucket</th><th>Charges</th><th>Net Gain</th></tr></thead>
+          <tbody>${holdingsRows}</tbody>
+        </table>
+      </div>
+      <button class="btn btn-outline btn-sm" id="tax-view-investments" style="margin-top:0.5rem">
+        <i data-lucide="external-link"></i> View holding period, charges &amp; sold lots in Investments
+      </button>
+    </details>`;
+
+  document.getElementById("tax-view-investments")?.addEventListener("click", () => {
+    document.querySelector('.nav-item[data-page="investments"]')?.click();
+  });
+  lucide.createIcons();
+};
+
 // ─── MAIN CALCULATE ───────────────────────────────────────────
 const calculateTax = () => {
   const fy      = document.getElementById("tax-fy").value;
@@ -95,9 +155,14 @@ const calculateTax = () => {
   const age     = +document.getElementById("tax-age").value || 30;
   const salary  = +document.getElementById("tax-salary").value || 0;
   const biz     = +document.getElementById("tax-business").value || 0;
-  const capGain = +document.getElementById("tax-capgains").value || 0;
+  const manualCapGain = +document.getElementById("tax-capgains").value || 0; // for capital assets NOT tracked in Investments
   const other   = +document.getElementById("tax-other-income").value || 0;
-  const totalIncome = salary + biz + other; // capgains handled separately
+
+  const cg = computeCapitalGainsSummary(fy);
+  // Slab-taxed gains (Gold/Debt/Commodity) + any manual entry get added to
+  // regular income; STCG/LTCG are taxed separately at their own flat rates
+  // regardless of regime.
+  const totalIncome = salary + biz + other + cg.slabGains + manualCapGain;
 
   const deductions = {
     c80c:     +document.getElementById("tax-80c")?.value || 0,
@@ -109,25 +174,25 @@ const calculateTax = () => {
 
   let result;
   if (regime === "compare") {
-    const newT = addSurchargeAndCess(calcNewRegimeTax(totalIncome, age, fy), totalIncome);
+    const newT = addSurchargeAndCess(calcNewRegimeTax(totalIncome, age, fy), totalIncome) + cg.totalCapGainsTax;
     const { tax: oldTaxBase, taxable, totalDed } = calcOldRegimeTax(totalIncome, age, deductions);
-    const oldT = addSurchargeAndCess(oldTaxBase, totalIncome);
-    result = renderCompare({ newT, oldT, totalIncome, totalDed, taxable, age, fy });
+    const oldT = addSurchargeAndCess(oldTaxBase, totalIncome) + cg.totalCapGainsTax;
+    result = renderCompare({ newT, oldT, totalIncome, totalDed, taxable, age, fy, cg });
   } else if (regime === "new") {
     const baseTax = calcNewRegimeTax(totalIncome, age, fy);
-    const total   = addSurchargeAndCess(baseTax, totalIncome);
-    result = renderResult({ tax: total, totalIncome, regime: "New", standardDed: 75000, taxable: Math.max(0, totalIncome - 75000) });
+    const total   = addSurchargeAndCess(baseTax, totalIncome) + cg.totalCapGainsTax;
+    result = renderResult({ tax: total, totalIncome, regime: "New", standardDed: 75000, taxable: Math.max(0, totalIncome - 75000), cg });
   } else {
     const { tax: baseTax, taxable, totalDed } = calcOldRegimeTax(totalIncome, age, deductions);
-    const total = addSurchargeAndCess(baseTax, totalIncome);
-    result = renderResult({ tax: total, totalIncome, regime: "Old", totalDed, taxable });
+    const total = addSurchargeAndCess(baseTax, totalIncome) + cg.totalCapGainsTax;
+    result = renderResult({ tax: total, totalIncome, regime: "Old", totalDed, taxable, cg });
   }
 
   document.getElementById("tax-result-panel").innerHTML = result;
   lucide.createIcons();
 };
 
-const renderResult = ({ tax, totalIncome, regime, totalDed, standardDed, taxable }) => {
+const renderResult = ({ tax, totalIncome, regime, totalDed, standardDed, taxable, cg }) => {
   const effective = totalIncome > 0 ? (tax / totalIncome * 100).toFixed(2) : 0;
   return `
     <div class="card tax-result-card">
@@ -135,13 +200,14 @@ const renderResult = ({ tax, totalIncome, regime, totalDed, standardDed, taxable
         <h3>Tax Calculation</h3>
         <span class="tax-regime-badge">${regime} Regime</span>
       </div>
-      <div class="result-row"><span class="result-label">Gross Income</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
+      <div class="result-row"><span class="result-label">Gross Income (incl. slab-taxed gains)</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
       <div class="result-row"><span class="result-label">Total Deductions</span><span class="result-val">${formatCurrency(totalDed||standardDed||0)}</span></div>
       <div class="result-row"><span class="result-label">Taxable Income</span><span class="result-val">${formatCurrency(taxable)}</span></div>
-      <div class="result-row"><span class="result-label">Tax (incl. surcharge & cess)</span><span class="result-val">${formatCurrency(tax)}</span></div>
+      <div class="result-row"><span class="result-label">Slab Tax (incl. surcharge &amp; cess)</span><span class="result-val">${formatCurrency(tax - cg.totalCapGainsTax)}</span></div>
+      <div class="result-row"><span class="result-label">+ Capital Gains Tax (STCG+LTCG)</span><span class="result-val">${formatCurrency(cg.totalCapGainsTax)}</span></div>
       <div class="result-row"><span class="result-label">Effective Tax Rate</span><span class="result-val">${effective}%</span></div>
       <div class="tax-highlight">
-        <div class="muted" style="font-size:0.75rem;margin-bottom:4px">Tax Payable</div>
+        <div class="muted" style="font-size:0.75rem;margin-bottom:4px">Total Tax Payable</div>
         <div style="font-size:1.6rem;font-weight:700;color:var(--c-primary)">${formatCurrency(tax)}</div>
         <div class="muted" style="font-size:0.78rem;margin-top:4px">Effective rate: ${effective}%</div>
       </div>
@@ -151,7 +217,7 @@ const renderResult = ({ tax, totalIncome, regime, totalDed, standardDed, taxable
     </div>`;
 };
 
-const renderCompare = ({ newT, oldT, totalIncome, totalDed, taxable, age, fy }) => {
+const renderCompare = ({ newT, oldT, totalIncome, totalDed, taxable, age, fy, cg }) => {
   const better    = newT <= oldT ? "New" : "Old";
   const saving    = Math.abs(newT - oldT);
   const effNew    = totalIncome > 0 ? (newT/totalIncome*100).toFixed(2) : 0;
@@ -159,7 +225,8 @@ const renderCompare = ({ newT, oldT, totalIncome, totalDed, taxable, age, fy }) 
   return `
     <div class="card tax-result-card">
       <h3 style="margin-bottom:var(--sp-md)">Regime Comparison</h3>
-      <div class="result-row"><span class="result-label">Gross Income</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
+      <div class="result-row"><span class="result-label">Gross Income (incl. slab-taxed gains)</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
+      <div class="result-row"><span class="result-label">Capital Gains Tax (STCG+LTCG, same both regimes)</span><span class="result-val">${formatCurrency(cg.totalCapGainsTax)}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-sm);margin:var(--sp-md) 0">
         <div class="card" style="${newT<=oldT?"border-color:var(--c-primary);border-width:2px":""}">
           <div class="card-label">New Regime ${newT<=oldT?'✓ Better':''}</div>
