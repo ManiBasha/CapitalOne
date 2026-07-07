@@ -236,7 +236,7 @@ const renderInvTabs = () => {
   });
 };
 
-// ─── DAILY SNAPSHOT BY ASSET CLASS  ──
+// ─── DAILY SNAPSHOT BY ASSET CLASS (for the trading-style value chart) ──
 const SNAPSHOT_TYPE_KEY = "portfolio_snapshots_by_type";
 const recordAssetClassSnapshot = () => {
   const byType = {};
@@ -809,6 +809,14 @@ export const openInvModal = (inv) => {
       <label>Sector</label>
       <input type="text" id="inv-m-sector" class="input" placeholder="e.g. Technology, Finance" value="${inv?.sector||""}" ${isEdit ? "disabled" : ""} />
     </div>
+    <div class="form-row hidden" id="inv-m-taxcat-row">
+      <label>Tax Treatment</label>
+      <select id="inv-m-taxcat" class="input">
+        <option value="equity">Equity (STCG @20% / LTCG @12.5%)</option>
+        <option value="slab">Slab Rate (Debt / Gold / Other)</option>
+      </select>
+      <div class="muted" style="font-size:0.7rem;margin-top:4px">Used by the Income Tax page to bucket gains correctly.</div>
+    </div>
     <div class="form-row">
       <label>Purchase Date</label>
       <input type="date" id="inv-m-date" class="input" value="${inv?.purchaseDate||todayISO()}" ${isEdit ? "disabled" : ""} />
@@ -831,6 +839,14 @@ export const openInvModal = (inv) => {
 
   openModal(isEdit ? "Edit Investment" : "Add Investment", body, footer);
 
+  const taxCatRow = document.getElementById("inv-m-taxcat-row");
+  const taxCatSel = document.getElementById("inv-m-taxcat");
+  if (isEdit) {
+    const showTaxCat = inv.assetType === "Mutual Fund" || !ASSET_TYPES.includes(inv.assetType);
+    taxCatRow.classList.toggle("hidden", !showTaxCat);
+    if (showTaxCat) taxCatSel.value = inv.taxCategory || (inv.assetType === "Mutual Fund" ? "equity" : "slab");
+  }
+
   if (!isEdit) {
     const refreshCharges = () => {
       const type = document.getElementById("inv-m-type").value;
@@ -838,6 +854,10 @@ export const openInvModal = (inv) => {
       document.getElementById("inv-m-charges-fields").innerHTML = chargesFieldsHTML(actualType, "buy");
       prefillChargeDefaults(actualType, "buy");
       bindChargesLivePreview(actualType, "buy", "inv-m-qty", "inv-m-avg", "inv-m-charges-preview");
+
+      const showTaxCat = actualType === "Mutual Fund" || !ASSET_TYPES.includes(actualType);
+      taxCatRow.classList.toggle("hidden", !showTaxCat);
+      if (showTaxCat) taxCatSel.value = actualType === "Mutual Fund" ? "equity" : "slab";
     };
     document.getElementById("inv-m-type").addEventListener("change", (e) => {
       document.getElementById("inv-m-new-type-row").classList.toggle("hidden", e.target.value !== "__add_new__");
@@ -860,8 +880,14 @@ const saveInv = async (editId) => {
     assetType = newTypeName;
   }
 
+  const taxCatRow = document.getElementById("inv-m-taxcat-row");
+  const taxCategory = !taxCatRow.classList.contains("hidden")
+    ? document.getElementById("inv-m-taxcat").value
+    : (assetType === "Equity" ? "equity" : "slab");
+
   const data = {
     assetType,
+    taxCategory,
     name:         document.getElementById("inv-m-name").value.trim(),
     isin:         document.getElementById("inv-m-isin").value.trim(),
     currentPrice: parseFloat(document.getElementById("inv-m-current").value) || 0,
