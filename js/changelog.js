@@ -5,6 +5,23 @@
 // changed and when without digging through commits.
 export const CHANGELOG = [
   {
+    version: "v8",
+    date: "2026-07-07",
+    title: "Goals, Charts & Health Score Overhaul",
+    changes: [
+      "Goal contributions now have full history — add/edit/delete individual entries instead of overwriting one total",
+      "Optional 'Link to Goal' when buying an investment — counts the purchase toward that goal automatically",
+      "Transaction-level Excel export: one row per Buy/Sell with Asset Name, Type, Qty, Buy/Sell/Current Price, Buy/Sell Date, Broker, Sector, Exit Load, Total Charges",
+      "Dashboard: new Capital Gains card showing STCG/LTCG gains + tax for a selected Financial Year",
+      "Charts fixed to fit mobile screens properly (no more horizontal overflow)",
+      "All pie/doughnut charts made smaller, with % allocation shown in the legend",
+      "Portfolio page: 'Absolute Return' replaced with CAGR",
+      "Portfolio Health Score is now clickable — shows a full breakdown per criterion (Good/Fair/Needs Work) with specific suggestions",
+      "Added Emergency Fund (and Provident Fund, Insurance) as Asset categories — Emergency Fund now factors directly into the Health Score",
+      "Value Trend by Asset Class and Portfolio Performance charts now reconstructed from real Buy/Sell dates, going back to your actual first purchase — no longer dependent on when the snapshot feature started running",
+    ]
+  },
+  {
     version: "v6",
     date: "2026-07-06",
     title: "Income Tax: Capital Gains Engine",
