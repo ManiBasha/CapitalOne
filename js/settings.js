@@ -5,6 +5,7 @@ import { saveProfile, getProfile, clearAllData } from "./database.js?v=20260705b
 import { toast, ls, formatCurrency } from "./utils.js?v=20260705b";
 import { logout } from "./firebase.js?v=20260705b";
 import { setThemeColor, resetThemeColor, getThemeColor, setAppIcon, resetAppIcon } from "./theme.js?v=20260705b";
+import { renderChangeLog } from "./changelog.js?v=20260705b";
 
 export const initSettings = async () => {
   await renderProfileForm();
@@ -13,6 +14,7 @@ export const initSettings = async () => {
   bindNotificationEvents();
   bindDangerZone();
   bindAppearanceEvents();
+  renderChangeLog();
 };
 
 // ─── NOTIFICATIONS (reminder preferences) ─────────────────────
