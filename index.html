@@ -206,10 +206,10 @@
               <div class="card-label">XIRR (Overall)</div>
               <div class="card-value" id="dash-xirr">—</div>
             </div>
-            <div class="card">
+            <div class="card card-clickable" id="card-health-score">
               <div class="card-label">Portfolio Health Score</div>
               <div class="card-value" id="dash-health-score">—</div>
-              <div class="card-sub">out of 100</div>
+              <div class="card-sub">out of 100 · tap for details</div>
             </div>
           </div>
 
@@ -244,13 +244,39 @@
           <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app — historical market prices aren't backfilled.</div>
 
           <div class="charts-row" style="margin-top:1.5rem">
-            <div class="chart-card">
+            <div class="chart-card chart-card-pie">
               <div class="chart-title">Quick Summary — Asset Allocation</div>
               <canvas id="chart-quick-summary"></canvas>
             </div>
             <div class="chart-card">
               <div class="chart-title">Breakdown</div>
               <div id="quick-summary-list" class="qs-list"></div>
+            </div>
+          </div>
+
+          <div class="page-header" style="margin-top:1.5rem">
+            <h3 style="font-size:1rem">Capital Gains</h3>
+            <select id="dash-cg-fy" class="input-sm"></select>
+          </div>
+          <div class="cards-grid">
+            <div class="card">
+              <div class="card-label">STCG Gains (≤365 days)</div>
+              <div class="card-value" id="dash-stcg-gains">₹0</div>
+              <div class="card-sub muted" id="dash-stcg-tax">Tax: ₹0</div>
+            </div>
+            <div class="card">
+              <div class="card-label">LTCG Gains (&gt;365 days)</div>
+              <div class="card-value" id="dash-ltcg-gains">₹0</div>
+              <div class="card-sub muted" id="dash-ltcg-tax">Tax: ₹0</div>
+            </div>
+            <div class="card">
+              <div class="card-label">Slab-Taxed Gains</div>
+              <div class="card-value" id="dash-slab-gains">₹0</div>
+              <div class="card-sub muted">Gold/Debt/Commodity</div>
+            </div>
+            <div class="card card-hero">
+              <div class="card-label">Total Capital Gains Tax</div>
+              <div class="card-value" id="dash-cg-total-tax">₹0</div>
             </div>
           </div>
 
@@ -311,8 +337,8 @@
               <div class="card-value" id="pf-gain">₹0</div>
             </div>
             <div class="card">
-              <div class="card-label">Absolute Return</div>
-              <div class="card-value" id="pf-abs-return">0%</div>
+              <div class="card-label">CAGR</div>
+              <div class="card-value" id="pf-cagr">0%</div>
             </div>
           </div>
 
@@ -325,11 +351,11 @@
           <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app.</div>
 
           <div class="charts-row" style="margin-top:1.5rem">
-            <div class="chart-card">
+            <div class="chart-card chart-card-pie">
               <div class="chart-title">Sector Allocation</div>
               <canvas id="chart-sector-alloc"></canvas>
             </div>
-            <div class="chart-card">
+            <div class="chart-card chart-card-pie">
               <div class="chart-title">Broker Allocation</div>
               <canvas id="chart-broker-alloc"></canvas>
             </div>
@@ -378,7 +404,7 @@
             </div>
           </div>
           <div class="charts-row">
-            <div class="chart-card">
+            <div class="chart-card chart-card-pie">
               <div class="chart-title">Asset Allocation</div>
               <canvas id="chart-inv-alloc"></canvas>
             </div>
@@ -696,6 +722,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- App JS (ES modules) -->
-  <script type="module" src="js/app.js?v=20260705b"></script>
+  <script type="module" src="js/app.js?v=20260707a"></script>
 </body>
 </html>
