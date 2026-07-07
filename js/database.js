@@ -8,7 +8,7 @@ import {
   updateDoc, deleteDoc,
   query, where, orderBy, limit, onSnapshot,
   serverTimestamp
-} from "./firebase.js?v=20260705b";
+} from "./firebase.js?v=20260707a";
 
 const uid = () => auth.currentUser?.uid;
 
@@ -86,6 +86,26 @@ export const getGoals = async () => {
 
 export const deleteGoal = async (id) => deleteDoc(userDoc(uid(), "goals", id));
 
+// ─── GOAL CONTRIBUTIONS (history of adds/removals, not just overwriting currentAmount) ──
+export const addGoalContribution = async (goalId, contribution) => {
+  const ref = doc(collection(db, "users", uid(), "goals", goalId, "contributions"));
+  await setDoc(ref, { ...contribution, createdAt: serverTimestamp() });
+  return ref.id;
+};
+
+export const getGoalContributions = async (goalId) => {
+  const snap = await getDocs(collection(db, "users", uid(), "goals", goalId, "contributions"));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const updateGoalContribution = async (goalId, contributionId, data) => {
+  await setDoc(doc(db, "users", uid(), "goals", goalId, "contributions", contributionId), data, { merge: true });
+};
+
+export const deleteGoalContribution = async (goalId, contributionId) => {
+  await deleteDoc(doc(db, "users", uid(), "goals", goalId, "contributions", contributionId));
+};
+
 // ─── ASSETS & LIABILITIES ────────────────────────────────────
 export const saveAsset = async (id, data) => {
   const ref = id ? userDoc(uid(), "assets", id) : doc(userCol(uid(), "assets"));
@@ -119,10 +139,16 @@ export const exportAllData = async () => {
     const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (col === "investments") {
       for (const inv of docs) {
-        const sellsSnap = await getDocs(collection(db, "users", u, "investments", inv.id, "sells"));
+        const sellsSnap = await getDocs(collection(db, "users", u, col, inv.id, "sells"));
         inv._sells = sellsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const buysSnap = await getDocs(collection(db, "users", u, "investments", inv.id, "buys"));
+        const buysSnap = await getDocs(collection(db, "users", u, col, inv.id, "buys"));
         inv._buys = buysSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    }
+    if (col === "goals") {
+      for (const g of docs) {
+        const contribSnap = await getDocs(collection(db, "users", u, col, g.id, "contributions"));
+        g._contributions = contribSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       }
     }
     data[col] = docs;
@@ -139,7 +165,7 @@ export const importAllData = async (data) => {
   for (const col of writeable) {
     if (!data[col]) continue;
     for (const item of data[col]) {
-      const { id, createdAt, updatedAt, _sells, _buys, ...rest } = item;
+      const { id, createdAt, updatedAt, _sells, _buys, _contributions, ...rest } = item;
       const newId = id || doc(collection(db, "users", u, col)).id;
       await setDoc(doc(db, "users", u, col, newId), rest);
       if (col === "investments") {
@@ -150,6 +176,12 @@ export const importAllData = async (data) => {
         for (const buy of (_buys || [])) {
           const { id: buyId, ...buyRest } = buy;
           await setDoc(doc(db, "users", u, col, newId, "buys", buyId || doc(collection(db, "users", u, col, newId, "buys")).id), buyRest);
+        }
+      }
+      if (col === "goals") {
+        for (const c of (_contributions || [])) {
+          const { id: cId, ...cRest } = c;
+          await setDoc(doc(db, "users", u, col, newId, "contributions", cId || doc(collection(db, "users", u, col, newId, "contributions")).id), cRest);
         }
       }
     }
@@ -183,6 +215,17 @@ export const clearAllData = async () => {
           } catch (err) {
             errors.push(`${col}/${invDoc.id}/${sub}: ${err.message}`);
           }
+        }
+      }
+    }
+    if (col === "goals") {
+      for (const goalDoc of snap.docs) {
+        try {
+          const subSnap = await getDocs(collection(db, "users", u, "goals", goalDoc.id, "contributions"));
+          const subResults = await Promise.allSettled(subSnap.docs.map(d => deleteDoc(d.ref)));
+          subResults.forEach(r => { if (r.status === "rejected") errors.push(`contributions: ${r.reason?.message||r.reason}`); });
+        } catch (err) {
+          errors.push(`${col}/${goalDoc.id}/contributions: ${err.message}`);
         }
       }
     }
