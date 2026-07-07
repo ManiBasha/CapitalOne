@@ -1,11 +1,12 @@
 // ============================================================
-// js/dashboard.js Dashboard home page
+// js/dashboard.js – Personal Wealth & Investment Dashboard home page
 // ============================================================
-import { getInvestmentsData, getAllSells, getAllBuys, aggregateInvestments, openInvModal } from "./investments.js?v=20260705b";
-import { getWealthData } from "./wealth.js?v=20260705b";
-import { getGoalsData } from "./goals.js?v=20260705b";
-import { formatCurrency, todayISO, ls } from "./utils.js?v=20260705b";
-import { renderQuickSummaryChart, renderPortfolioPerformanceChart } from "./charts.js?v=20260705b";
+import { getInvestmentsData, getAllSells, getAllBuys, aggregateInvestments, getPortfolioCostBasisTimeline, openInvModal } from "./investments.js?v=20260707a";
+import { getWealthData } from "./wealth.js?v=20260707a";
+import { getGoalsData } from "./goals.js?v=20260707a";
+import { formatCurrency, todayISO, ls, openModal, closeModal } from "./utils.js?v=20260707a";
+import { renderQuickSummaryChart, renderPortfolioPerformanceChart } from "./charts.js?v=20260707a";
+import { computeCapitalGainsSummary } from "./capitalgains.js?v=20260707a";
 
 // ─── INVESTED-CAPITAL SERIES (from the actual first purchase date) ──
 // We don't have historical market prices, so "Invested (cumulative)" is the
@@ -96,6 +97,7 @@ const buildCashflows = (investments, allSells) => {
 // Populates gradually as the app is used day-to-day since we don't have
 // historical market prices to backfill.
 const SNAPSHOT_KEY = "portfolio_snapshots";
+let _lastHealthBreakdown = [];
 const recordSnapshot = (value) => {
   const snaps = ls.get(SNAPSHOT_KEY, {});
   snaps[todayISO()] = value;
@@ -121,48 +123,84 @@ const computeQuickSummary = (investments, allSells, assets, liabilities) => {
     .reduce((s, a) => s + (a.currentValue || a.value || 0), 0);
 
   return {
-    "Equity":       byType(["Equity"]),
-    "Mutual Funds": byType(["Mutual Fund"]),
-    "Commodity":    byType(["Commodity"]) + assetByCat(["Gold/Jewelry"]),
-    "FD":           byType(["FD"]),
-    "Cash":         assetByCat(["Cash", "Bank Deposit"]),
-    "Other Assets": assetByCat(["Real Estate", "Vehicle", "Other"]),
-    "Liabilities":  -liabilities.reduce((s, l) => s + (l.outstanding || 0), 0),
+    "Equity":         byType(["Equity"]),
+    "Mutual Funds":   byType(["Mutual Fund"]),
+    "Commodity":      byType(["Commodity"]) + assetByCat(["Gold/Jewelry"]),
+    "FD":             byType(["FD"]),
+    "Emergency Fund": assetByCat(["Emergency Fund"]),
+    "Cash":           assetByCat(["Cash", "Bank Deposit"]),
+    "Other Assets":   assetByCat(["Real Estate", "Vehicle", "Provident Fund (EPF/PPF)", "Insurance (Cash Value)", "Other"]),
+    "Liabilities":    -liabilities.reduce((s, l) => s + (l.outstanding || 0), 0),
   };
 };
 
 // ─── PORTFOLIO HEALTH SCORE (0-100, simple heuristic) ──────────
+// ─── PORTFOLIO HEALTH SCORE (0-100) — with per-criterion breakdown ──
 const computeHealthScore = (investments, quickSummary, goals) => {
-  let score = 0;
-  // Diversification: fewer than 2 non-empty buckets = weak
-  const buckets = Object.entries(quickSummary).filter(([k, v]) => k !== "Liabilities" && v > 0).length;
-  score += Math.min(buckets * 8, 32); // up to 32 pts for spreading across asset classes
+  const criteria = [];
+  const total = Object.entries(quickSummary).filter(([k]) => k !== "Liabilities").reduce((s, [,v]) => s + v, 0);
 
-  // Concentration: no single holding should dominate the equity book
+  // 1. Diversification across asset classes
+  const buckets = Object.entries(quickSummary).filter(([k, v]) => k !== "Liabilities" && v > 0).length;
+  const divPts = Math.min(buckets * 8, 32);
+  criteria.push({
+    label: "Diversification", points: divPts, max: 32,
+    status: divPts >= 24 ? "good" : divPts >= 12 ? "ok" : "bad",
+    detail: `Spread across ${buckets} asset ${buckets === 1 ? "class" : "classes"}.`,
+    suggestion: divPts >= 24 ? "Good spread — keep it up." : "Consider spreading investments across more asset classes (Equity, Mutual Funds, FD, Commodity) to reduce risk."
+  });
+
+  // 2. Concentration — no single equity holding should dominate
   const equityInvs = investments.filter(i => i.assetType === "Equity");
   const equityTotal = equityInvs.reduce((s, i) => s + (i.currentPrice || i.avgPrice) * (i.quantity || 0), 0);
   const maxHolding = Math.max(0, ...equityInvs.map(i => (i.currentPrice || i.avgPrice) * (i.quantity || 0)));
   const concentration = equityTotal > 0 ? maxHolding / equityTotal : 0;
-  score += concentration < 0.25 ? 25 : concentration < 0.4 ? 15 : concentration < 0.6 ? 8 : 0;
+  const concPts = concentration < 0.25 ? 25 : concentration < 0.4 ? 15 : concentration < 0.6 ? 8 : 0;
+  criteria.push({
+    label: "Concentration Risk", points: concPts, max: 25,
+    status: concPts >= 20 ? "good" : concPts >= 10 ? "ok" : "bad",
+    detail: equityTotal > 0 ? `Largest single equity holding is ${(concentration*100).toFixed(0)}% of your equity book.` : "No equity holdings yet.",
+    suggestion: concPts >= 20 ? "Well diversified within equity." : "One or two stocks make up too much of your equity — consider trimming and spreading into other names."
+  });
 
-  // Emergency fund proxy: Cash bucket vs total portfolio
-  const total = Object.entries(quickSummary).filter(([k]) => k !== "Liabilities").reduce((s, [,v]) => s + v, 0);
-  const cashRatio = total > 0 ? (quickSummary["Cash"] || 0) / total : 0;
-  score += cashRatio >= 0.1 ? 18 : cashRatio >= 0.05 ? 10 : 4;
+  // 3. Emergency Fund / cash buffer
+  const emergencyFund = quickSummary["Emergency Fund"] || 0;
+  const cashRatio = total > 0 ? (emergencyFund + (quickSummary["Cash"] || 0)) / total : 0;
+  const efPts = cashRatio >= 0.1 ? 18 : cashRatio >= 0.05 ? 10 : 4;
+  criteria.push({
+    label: "Emergency Fund / Cash Buffer", points: efPts, max: 18,
+    status: efPts >= 15 ? "good" : efPts >= 8 ? "ok" : "bad",
+    detail: `Emergency Fund + Cash is ${(cashRatio*100).toFixed(1)}% of your total wealth.`,
+    suggestion: efPts >= 15 ? "Healthy buffer for emergencies." : "Build up a dedicated Emergency Fund (aim for 3-6 months of expenses) under Dashboard → Manage Assets."
+  });
 
-  // Goal funding
+  // 4. Goal funding
+  let goalPts;
   if (goals.length) {
     const avgProgress = goals.reduce((s, g) => s + Math.min(1, (g.currentAmount || 0) / (g.targetAmount || 1)), 0) / goals.length;
-    score += avgProgress * 15;
+    goalPts = avgProgress * 15;
   } else {
-    score += 6; // neutral if no goals set yet
+    goalPts = 6;
   }
+  criteria.push({
+    label: "Goal Funding", points: goalPts, max: 15,
+    status: goalPts >= 12 ? "good" : goalPts >= 6 ? "ok" : "bad",
+    detail: goals.length ? `${goals.length} goal(s) tracked.` : "No goals set yet.",
+    suggestion: goals.length ? (goalPts >= 12 ? "Goals are well funded." : "Increase contributions toward your goals to stay on track.") : "Set up a few financial goals (Retirement, House, etc.) to track progress against."
+  });
 
-  // Leverage: liabilities vs assets
+  // 5. Leverage — liabilities vs total assets
   const liabRatio = total > 0 ? Math.abs(quickSummary["Liabilities"] || 0) / total : 0;
-  score += liabRatio < 0.2 ? 10 : liabRatio < 0.4 ? 5 : 0;
+  const levPts = liabRatio < 0.2 ? 10 : liabRatio < 0.4 ? 5 : 0;
+  criteria.push({
+    label: "Leverage (Debt Load)", points: levPts, max: 10,
+    status: levPts >= 8 ? "good" : levPts >= 4 ? "ok" : "bad",
+    detail: `Liabilities are ${(liabRatio*100).toFixed(1)}% of your total wealth.`,
+    suggestion: levPts >= 8 ? "Debt load is under control." : "Focus on paying down liabilities — high debt relative to assets increases financial risk."
+  });
 
-  return Math.round(Math.min(100, score));
+  const score = Math.round(Math.min(100, criteria.reduce((s, c) => s + c.points, 0)));
+  return { score, criteria };
 };
 
 // ─── UPCOMING REMINDERS ─────────────────────────────────────────
@@ -229,11 +267,13 @@ export const refreshDashboard = async () => {
   renderQuickSummaryChart(quickSummary);
   renderQuickSummaryList(quickSummary);
 
-  // Performance chart with active range filter — invested line goes back to
-  // the real first purchase date; current-value line layers on from snapshots.
+  // Performance chart with active range filter — both lines are now built
+  // from real Buy/Sell dates (invested = cumulative cost; current value =
+  // cost-basis-over-time with today overridden to live market prices).
   const activeRange = document.querySelector("#perf-range-filter .filter-btn.active")?.dataset.range || "1M";
   const investedSeries = buildInvestedSeries(investments, getAllBuys(), allSells);
-  const valueSeries = Object.entries(snaps).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
+  const valueTimeline = getPortfolioCostBasisTimeline();
+  const valueSeries = Object.entries(valueTimeline).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
   renderPortfolioPerformanceChart(
     filterSeriesByRange(investedSeries, activeRange),
     filterSeriesByRange(valueSeries, activeRange)
@@ -241,15 +281,47 @@ export const refreshDashboard = async () => {
 
   // Health score
   const goals = getGoalsData();
-  const health = computeHealthScore(investments, quickSummary, goals);
+  const healthResult = computeHealthScore(investments, quickSummary, goals);
+  _lastHealthBreakdown = healthResult.criteria;
   const healthEl = document.getElementById("dash-health-score");
-  if (healthEl) healthEl.textContent = health;
+  if (healthEl) healthEl.textContent = healthResult.score;
 
   // Reminders
   renderReminders(computeReminders());
 
+  populateCapGainsFYOptions();
+  renderCapGainsCard();
+  bindCapGainsFYFilter();
   bindPerfRangeFilter();
   lucide.createIcons();
+};
+
+// ─── DASHBOARD CAPITAL GAINS CARD (STCG/LTCG for selected FY) ──
+const populateCapGainsFYOptions = () => {
+  const sel = document.getElementById("dash-cg-fy");
+  if (!sel || sel.options.length > 0) return; // populate once
+  const today = new Date();
+  const currentFYStart = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+  const fyList = [];
+  for (let y = currentFYStart; y >= currentFYStart - 5; y--) fyList.push(`${y}-${String(y+1).slice(2)}`);
+  sel.innerHTML = fyList.map(fy => `<option value="${fy}">FY ${fy}</option>`).join("");
+};
+
+const bindCapGainsFYFilter = () => {
+  document.getElementById("dash-cg-fy")?.addEventListener("change", renderCapGainsCard);
+};
+
+const renderCapGainsCard = () => {
+  const fy = document.getElementById("dash-cg-fy")?.value;
+  if (!fy) return;
+  const cg = computeCapitalGainsSummary(fy);
+
+  document.getElementById("dash-stcg-gains").textContent = formatCurrency(cg.stcgGains, "INR", true);
+  document.getElementById("dash-stcg-tax").textContent = "Tax: " + formatCurrency(cg.stcgTax, "INR", true);
+  document.getElementById("dash-ltcg-gains").textContent = formatCurrency(cg.ltcgGains, "INR", true);
+  document.getElementById("dash-ltcg-tax").textContent = "Tax: " + formatCurrency(cg.ltcgTax, "INR", true);
+  document.getElementById("dash-slab-gains").textContent = formatCurrency(cg.slabGains, "INR", true);
+  document.getElementById("dash-cg-total-tax").textContent = formatCurrency(cg.totalCapGainsTax, "INR", true);
 };
 
 const renderQuickSummaryList = (breakdown) => {
@@ -286,9 +358,9 @@ const bindPerfRangeFilter = () => {
       btn.classList.add("active");
       const investments = getInvestmentsData();
       const allSells = getAllSells();
-      const snaps = ls.get(SNAPSHOT_KEY, {});
       const investedSeries = buildInvestedSeries(investments, getAllBuys(), allSells);
-      const valueSeries = Object.entries(snaps).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
+      const valueTimeline = getPortfolioCostBasisTimeline();
+      const valueSeries = Object.entries(valueTimeline).sort(([a],[b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
       renderPortfolioPerformanceChart(
         filterSeriesByRange(investedSeries, btn.dataset.range),
         filterSeriesByRange(valueSeries, btn.dataset.range)
@@ -299,4 +371,33 @@ const bindPerfRangeFilter = () => {
 
 export const bindDashboardQuickActions = () => {
   document.getElementById("qa-add-investment-dash")?.addEventListener("click", () => openInvModal(null));
+  document.getElementById("card-health-score")?.addEventListener("click", openHealthScoreModal);
+};
+
+const STATUS_LABEL = { good: "Good", ok: "Fair", bad: "Needs Work" };
+
+const openHealthScoreModal = () => {
+  const score = document.getElementById("dash-health-score")?.textContent || "—";
+  const rows = _lastHealthBreakdown.map(c => `
+    <div class="health-criterion health-${c.status}">
+      <div class="health-criterion-header">
+        <span class="health-criterion-label">${c.label}</span>
+        <span class="health-criterion-badge health-badge-${c.status}">${STATUS_LABEL[c.status]}</span>
+        <span class="health-criterion-pts">${Math.round(c.points)}/${c.max}</span>
+      </div>
+      <div class="health-criterion-detail muted">${c.detail}</div>
+      <div class="health-criterion-suggestion">${c.suggestion}</div>
+    </div>
+  `).join("");
+
+  const body = `
+    <div class="tax-highlight" style="margin-bottom:var(--sp-md);text-align:center">
+      <div class="muted" style="font-size:0.78rem">Overall Score</div>
+      <div style="font-size:2rem;font-weight:700;color:var(--c-primary)">${score} / 100</div>
+    </div>
+    ${rows || `<div class="muted">No data yet — add investments and goals to see your score breakdown.</div>`}`;
+
+  const footer = `<button class="btn btn-ghost" id="health-modal-close">Close</button>`;
+  openModal("Portfolio Health Score", body, footer);
+  document.getElementById("health-modal-close").onclick = closeModal;
 };
