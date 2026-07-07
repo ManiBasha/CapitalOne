@@ -1,687 +1,252 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CapitalOne – Wealth & Investment Dashboard</title>
-  <meta name="description" content="Personal wealth & investment dashboard: portfolio tracking, net worth, goals, and Indian income tax planning" />
-  <link rel="icon" id="favicon-link" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%235a6e3a%22/><text x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>C</text></svg>" />
+// ============================================================
+// js/tax.js  – Indian Income Tax Calculator (FY 2025-26)
+// ============================================================
+import { formatCurrency, toast } from "./utils.js?v=20260705b";
+import { computeCapitalGainsSummary } from "./capitalgains.js?v=20260705b";
 
-  <!-- Inter Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+export const initTax = () => {
+  document.getElementById("btn-calc-tax")?.addEventListener("click", calculateTax);
 
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  // Show/hide old regime fields
+  document.querySelectorAll('input[name="regime"]').forEach(r => {
+    r.addEventListener("change", () => {
+      const show = r.value !== "new";
+      document.getElementById("old-regime-fields").style.display = show ? "block" : "none";
+    });
+  });
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  // Default: hide old-regime fields (new regime selected)
+  document.getElementById("old-regime-fields").style.display = "none";
 
-  <!-- SheetJS -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  // Live capital-gains preview whenever the FY changes
+  document.getElementById("tax-fy")?.addEventListener("change", renderCapGainsPreview);
+  renderCapGainsPreview();
+};
 
-  <!-- Stylesheets -->
-  <link rel="stylesheet" href="css/theme.css" />
-  <link rel="stylesheet" href="css/style.css" />
-</head>
-<body>
+// ─── SLAB CALCULATORS ────────────────────────────────────────
+const calcNewRegimeTax = (income, age, fy) => {
+  // FY 2025-26 New Regime slabs
+  const slabs = [
+    { limit: 300000,  rate: 0 },
+    { limit: 700000,  rate: 0.05 },
+    { limit: 1000000, rate: 0.10 },
+    { limit: 1200000, rate: 0.15 },
+    { limit: 1500000, rate: 0.20 },
+    { limit: Infinity, rate: 0.30 },
+  ];
+  const standardDeduction = 75000;
+  const taxable = Math.max(0, income - standardDeduction);
+  return computeSlabTax(taxable, slabs);
+};
 
-  <!-- ===== SPLASH / AUTH SCREEN ===== -->
-  <div id="auth-screen" class="auth-screen">
-    <div class="auth-card">
-      <div class="auth-logo">
-        <div class="logo-mark">C</div>
-        <h1 class="auth-title">CapitalOne</h1>
-        <p class="auth-subtitle">Your complete finance dashboard</p>
-      </div>
-      <div class="auth-actions">
-        <button id="btn-google-login" class="btn btn-primary btn-large">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="20" />
-          Continue with Google
-        </button>
-        <button id="btn-anon-login" class="btn btn-ghost btn-large">
-          Try without account
-        </button>
-      </div>
-      <p class="auth-note">Your data is encrypted and stored securely in Firebase</p>
+const calcOldRegimeTax = (income, age, deductions) => {
+  const {
+    c80c = 0, c80d = 0, hra = 0, homeLoan = 0, otherDed = 0
+  } = deductions;
+
+  const totalDed = Math.min(c80c, 150000) + Math.min(c80d, 50000) + hra + Math.min(homeLoan, 200000) + otherDed + 50000; // 50k standard ded
+  const taxable  = Math.max(0, income - totalDed);
+
+  let slabs;
+  if (age >= 80) {
+    slabs = [
+      { limit: 500000,  rate: 0 },
+      { limit: 1000000, rate: 0.20 },
+      { limit: Infinity, rate: 0.30 },
+    ];
+  } else if (age >= 60) {
+    slabs = [
+      { limit: 300000,  rate: 0 },
+      { limit: 500000,  rate: 0.05 },
+      { limit: 1000000, rate: 0.20 },
+      { limit: Infinity, rate: 0.30 },
+    ];
+  } else {
+    slabs = [
+      { limit: 250000,  rate: 0 },
+      { limit: 500000,  rate: 0.05 },
+      { limit: 1000000, rate: 0.20 },
+      { limit: Infinity, rate: 0.30 },
+    ];
+  }
+  return { tax: computeSlabTax(taxable, slabs), taxable, totalDed };
+};
+
+const computeSlabTax = (income, slabs) => {
+  let tax = 0, prev = 0;
+  for (const slab of slabs) {
+    if (income <= prev) break;
+    const taxable = Math.min(income, slab.limit) - prev;
+    tax  += taxable * slab.rate;
+    prev  = slab.limit;
+  }
+  return tax;
+};
+
+const addSurchargeAndCess = (tax, income) => {
+  let surcharge = 0;
+  if (income > 50000000)     surcharge = tax * 0.37;
+  else if (income > 20000000) surcharge = tax * 0.25;
+  else if (income > 10000000) surcharge = tax * 0.15;
+  else if (income > 5000000)  surcharge = tax * 0.10;
+  const cess = (tax + surcharge) * 0.04;
+  return tax + surcharge + cess;
+};
+
+// ─── CAPITAL GAINS PREVIEW (auto, from actual Investments data) ──
+export const renderCapGainsPreview = () => {
+  const fy = document.getElementById("tax-fy")?.value || "2025-26";
+  const el = document.getElementById("tax-capgains-preview");
+  if (!el) return;
+
+  const cg = computeCapitalGainsSummary(fy);
+
+  if (cg.matchCount === 0) {
+    el.innerHTML = `<div class="muted" style="font-size:0.8rem">No sales recorded in FY ${fy} yet — capital gains will appear here automatically once you sell an investment.</div>`;
+    return;
+  }
+
+  const holdingsRows = cg.holdings.map(h => {
+    const bucket = h.stcgGain !== 0 ? "STCG" : h.ltcgGain !== 0 ? "LTCG" : "Slab";
+    return `<tr>
+      <td>${h.investment.name}</td>
+      <td>${h.investment.assetType}</td>
+      <td>${bucket}</td>
+      <td>${formatCurrency(h.charges)}</td>
+      <td class="${h.netGain>=0?"positive":"negative"}">${h.netGain>=0?"+":""}${formatCurrency(h.netGain)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="result-row"><span class="result-label">STCG Gains (Equity, ≤365 days)</span><span class="result-val">${formatCurrency(cg.stcgGains)}</span></div>
+    <div class="result-row"><span class="result-label">STCG Tax @ 20%</span><span class="result-val">${formatCurrency(cg.stcgTax)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Gains (Equity, &gt;365 days)</span><span class="result-val">${formatCurrency(cg.ltcgGains)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Exemption Used</span><span class="result-val">${formatCurrency(Math.min(cg.ltcgGains, 125000))}</span></div>
+    <div class="result-row"><span class="result-label">Taxable LTCG</span><span class="result-val">${formatCurrency(cg.ltcgTaxableBase)}</span></div>
+    <div class="result-row"><span class="result-label">LTCG Tax @ 12.5%</span><span class="result-val">${formatCurrency(cg.ltcgTax)}</span></div>
+    <div class="result-row"><span class="result-label">Slab-Taxed Gains (Gold/Debt/Commodity)</span><span class="result-val">${formatCurrency(cg.slabGains)}</span></div>
+    <div class="tax-highlight" style="margin-top:0.5rem">
+      Total Capital Gains Tax (STCG+LTCG): <strong>${formatCurrency(cg.totalCapGainsTax)}</strong>
+      <div class="muted" style="font-size:0.72rem;margin-top:2px">Slab-taxed gains are added to your income below instead.</div>
     </div>
-  </div>
+    <details style="margin-top:0.75rem">
+      <summary class="muted" style="cursor:pointer;font-size:0.8rem">Which holdings contributed (${cg.holdings.length})</summary>
+      <div class="inv-table-wrap" style="margin-top:0.5rem">
+        <table class="inv-table">
+          <thead><tr><th>Name</th><th>Type</th><th>Bucket</th><th>Charges</th><th>Net Gain</th></tr></thead>
+          <tbody>${holdingsRows}</tbody>
+        </table>
+      </div>
+      <button class="btn btn-outline btn-sm" id="tax-view-investments" style="margin-top:0.5rem">
+        <i data-lucide="external-link"></i> View holding period, charges &amp; sold lots in Investments
+      </button>
+    </details>`;
 
-  <!-- ===== FIRST-TIME SETUP ===== -->
-  <div id="setup-screen" class="setup-screen hidden">
-    <div class="setup-container">
-      <div class="setup-header">
-        <div class="setup-step-indicator">
-          <span class="step active" data-step="1"></span>
-          <span class="step" data-step="2"></span>
-          <span class="step" data-step="3"></span>
+  document.getElementById("tax-view-investments")?.addEventListener("click", () => {
+    document.querySelector('.nav-item[data-page="investments"]')?.click();
+  });
+  lucide.createIcons();
+};
+
+// ─── MAIN CALCULATE ───────────────────────────────────────────
+const calculateTax = () => {
+  const fy      = document.getElementById("tax-fy").value;
+  const regime  = document.querySelector('input[name="regime"]:checked')?.value || "new";
+  const age     = +document.getElementById("tax-age").value || 30;
+  const salary  = +document.getElementById("tax-salary").value || 0;
+  const biz     = +document.getElementById("tax-business").value || 0;
+  const manualCapGain = +document.getElementById("tax-capgains").value || 0; // for capital assets NOT tracked in Investments
+  const other   = +document.getElementById("tax-other-income").value || 0;
+
+  const cg = computeCapitalGainsSummary(fy);
+  // Slab-taxed gains (Gold/Debt/Commodity) + any manual entry get added to
+  // regular income; STCG/LTCG are taxed separately at their own flat rates
+  // regardless of regime.
+  const totalIncome = salary + biz + other + cg.slabGains + manualCapGain;
+
+  const deductions = {
+    c80c:     +document.getElementById("tax-80c")?.value || 0,
+    c80d:     +document.getElementById("tax-80d")?.value || 0,
+    hra:      +document.getElementById("tax-hra")?.value || 0,
+    homeLoan: +document.getElementById("tax-homeloan")?.value || 0,
+    otherDed: +document.getElementById("tax-other-ded")?.value || 0,
+  };
+
+  let result;
+  if (regime === "compare") {
+    const newT = addSurchargeAndCess(calcNewRegimeTax(totalIncome, age, fy), totalIncome) + cg.totalCapGainsTax;
+    const { tax: oldTaxBase, taxable, totalDed } = calcOldRegimeTax(totalIncome, age, deductions);
+    const oldT = addSurchargeAndCess(oldTaxBase, totalIncome) + cg.totalCapGainsTax;
+    result = renderCompare({ newT, oldT, totalIncome, totalDed, taxable, age, fy, cg });
+  } else if (regime === "new") {
+    const baseTax = calcNewRegimeTax(totalIncome, age, fy);
+    const total   = addSurchargeAndCess(baseTax, totalIncome) + cg.totalCapGainsTax;
+    result = renderResult({ tax: total, totalIncome, regime: "New", standardDed: 75000, taxable: Math.max(0, totalIncome - 75000), cg });
+  } else {
+    const { tax: baseTax, taxable, totalDed } = calcOldRegimeTax(totalIncome, age, deductions);
+    const total = addSurchargeAndCess(baseTax, totalIncome) + cg.totalCapGainsTax;
+    result = renderResult({ tax: total, totalIncome, regime: "Old", totalDed, taxable, cg });
+  }
+
+  document.getElementById("tax-result-panel").innerHTML = result;
+  lucide.createIcons();
+};
+
+const renderResult = ({ tax, totalIncome, regime, totalDed, standardDed, taxable, cg }) => {
+  const effective = totalIncome > 0 ? (tax / totalIncome * 100).toFixed(2) : 0;
+  return `
+    <div class="card tax-result-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-md)">
+        <h3>Tax Calculation</h3>
+        <span class="tax-regime-badge">${regime} Regime</span>
+      </div>
+      <div class="result-row"><span class="result-label">Gross Income (incl. slab-taxed gains)</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
+      <div class="result-row"><span class="result-label">Total Deductions</span><span class="result-val">${formatCurrency(totalDed||standardDed||0)}</span></div>
+      <div class="result-row"><span class="result-label">Taxable Income</span><span class="result-val">${formatCurrency(taxable)}</span></div>
+      <div class="result-row"><span class="result-label">Slab Tax (incl. surcharge &amp; cess)</span><span class="result-val">${formatCurrency(tax - cg.totalCapGainsTax)}</span></div>
+      <div class="result-row"><span class="result-label">+ Capital Gains Tax (STCG+LTCG)</span><span class="result-val">${formatCurrency(cg.totalCapGainsTax)}</span></div>
+      <div class="result-row"><span class="result-label">Effective Tax Rate</span><span class="result-val">${effective}%</span></div>
+      <div class="tax-highlight">
+        <div class="muted" style="font-size:0.75rem;margin-bottom:4px">Total Tax Payable</div>
+        <div style="font-size:1.6rem;font-weight:700;color:var(--c-primary)">${formatCurrency(tax)}</div>
+        <div class="muted" style="font-size:0.78rem;margin-top:4px">Effective rate: ${effective}%</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="window.downloadTaxPDF()" style="margin-top:var(--sp-md)">
+        <i data-lucide="download"></i> Download PDF
+      </button>
+    </div>`;
+};
+
+const renderCompare = ({ newT, oldT, totalIncome, totalDed, taxable, age, fy, cg }) => {
+  const better    = newT <= oldT ? "New" : "Old";
+  const saving    = Math.abs(newT - oldT);
+  const effNew    = totalIncome > 0 ? (newT/totalIncome*100).toFixed(2) : 0;
+  const effOld    = totalIncome > 0 ? (oldT/totalIncome*100).toFixed(2) : 0;
+  return `
+    <div class="card tax-result-card">
+      <h3 style="margin-bottom:var(--sp-md)">Regime Comparison</h3>
+      <div class="result-row"><span class="result-label">Gross Income (incl. slab-taxed gains)</span><span class="result-val">${formatCurrency(totalIncome)}</span></div>
+      <div class="result-row"><span class="result-label">Capital Gains Tax (STCG+LTCG, same both regimes)</span><span class="result-val">${formatCurrency(cg.totalCapGainsTax)}</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-sm);margin:var(--sp-md) 0">
+        <div class="card" style="${newT<=oldT?"border-color:var(--c-primary);border-width:2px":""}">
+          <div class="card-label">New Regime ${newT<=oldT?'✓ Better':''}</div>
+          <div class="card-value">${formatCurrency(newT)}</div>
+          <div class="muted" style="font-size:0.75rem">${effNew}% effective</div>
         </div>
-        <h2 id="setup-title">Tell us about yourself</h2>
-        <p id="setup-desc">Personalise your CapitalOne experience</p>
-      </div>
-      <div id="setup-form" class="setup-form"></div>
-      <div class="setup-nav">
-        <button id="setup-back" class="btn btn-ghost hidden">Back</button>
-        <button id="setup-next" class="btn btn-primary">Next →</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== PIN LOCK ===== -->
-  <div id="pin-screen" class="pin-screen hidden">
-    <div class="pin-card">
-      <div class="logo-mark small">C</div>
-      <h3>Enter PIN</h3>
-      <div class="pin-dots" id="pin-dots">
-        <span></span><span></span><span></span><span></span>
-      </div>
-      <div class="pin-pad" id="pin-pad"></div>
-      <button id="pin-forgot" class="btn btn-ghost small">Forgot PIN? Sign out</button>
-    </div>
-  </div>
-
-  <!-- ===== MAIN APP ===== -->
-  <div id="app" class="app-layout hidden">
-
-    <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <div class="logo-mark small">C</div>
-          <span class="logo-text">CapitalOne</span>
+        <div class="card" style="${oldT<newT?"border-color:var(--c-primary);border-width:2px":""}">
+          <div class="card-label">Old Regime ${oldT<newT?'✓ Better':''}</div>
+          <div class="card-value">${formatCurrency(oldT)}</div>
+          <div class="muted" style="font-size:0.75rem">${effOld}% effective</div>
         </div>
-        <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Collapse sidebar" title="Collapse sidebar">
-          <i data-lucide="panel-left-close"></i>
-        </button>
-        <button class="sidebar-close" id="sidebar-close" aria-label="Close sidebar">
-          <i data-lucide="x"></i>
-        </button>
       </div>
-
-      <nav class="sidebar-nav" id="sidebar-nav-list">
-        <a href="#" class="nav-item active" data-page="dashboard" title="Dashboard">
-          <i data-lucide="layout-dashboard"></i>
-          <span>Dashboard</span>
-        </a>
-        <a href="#" class="nav-item" data-page="portfolio" title="Portfolio">
-          <i data-lucide="briefcase"></i>
-          <span>Portfolio</span>
-        </a>
-        <a href="#" class="nav-item" data-page="investments" title="Investments">
-          <i data-lucide="trending-up"></i>
-          <span>Investments</span>
-        </a>
-        <a href="#" class="nav-item" data-page="goals" title="Goals">
-          <i data-lucide="target"></i>
-          <span>Goals</span>
-        </a>
-        <a href="#" class="nav-item" data-page="tax" title="Income Tax">
-          <i data-lucide="calculator"></i>
-          <span>Income Tax</span>
-        </a>
-      </nav>
-
-      <div class="sidebar-footer">
-        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-          <i data-lucide="sun" class="icon-light"></i>
-          <i data-lucide="moon" class="icon-dark"></i>
-          <span id="theme-label">Light</span>
-        </button>
-        <button class="sidebar-profile" id="sidebar-profile" title="Open Settings">
-          <div class="avatar" id="user-avatar">U</div>
-          <div class="profile-info">
-            <span class="profile-name" id="user-name">User</span>
-            <span class="profile-email" id="user-email"></span>
-          </div>
-          <i data-lucide="settings" class="profile-settings-icon"></i>
-        </button>
+      <div class="tax-highlight">
+        <strong>${better} Regime saves you ${formatCurrency(saving)}</strong>
+        <div class="muted" style="font-size:0.78rem;margin-top:4px">Choose the ${better} Regime for FY ${fy}</div>
       </div>
-    </aside>
+    </div>`;
+};
 
-    <!-- Overlay -->
-    <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
-    <!-- Main Content -->
-    <div class="main-content">
-
-      <!-- Top Bar -->
-      <header class="topbar">
-        <button class="menu-btn" id="menu-btn" aria-label="Open menu">
-          <i data-lucide="menu"></i>
-        </button>
-        <div class="search-wrap">
-          <i data-lucide="search"></i>
-          <input type="search" id="global-search" placeholder="Search holdings, goals…" aria-label="Global search" />
-        </div>
-        <div class="topbar-right">
-          <button class="icon-btn" id="notif-btn" aria-label="Notifications">
-            <i data-lucide="bell"></i>
-            <span class="notif-dot hidden" id="notif-dot"></span>
-          </button>
-          <button class="mobile-profile-chip" id="mobile-profile-chip" title="Open Settings" aria-label="Open Settings">
-            <div class="avatar" id="user-avatar-mobile">U</div>
-          </button>
-        </div>
-      </header>
-
-      <!-- Search Results -->
-      <div id="search-results" class="search-results hidden"></div>
-
-      <!-- Notification Panel -->
-      <div id="notif-panel" class="notif-panel hidden">
-        <div class="notif-header"><h4>Notifications</h4><button id="notif-clear">Clear all</button></div>
-        <div id="notif-list" class="notif-list"></div>
-      </div>
-
-      <!-- Pages -->
-      <main class="page-content">
-
-        <!-- DASHBOARD PAGE -->
-        <section id="page-dashboard" class="page active">
-          <div class="page-header"><h2>Dashboard</h2></div>
-
-          <div class="cards-grid">
-            <div class="card card-hero" id="card-networth">
-              <div class="card-label">Net Worth</div>
-              <div class="card-value" id="nw-value">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Total Invested</div>
-              <div class="card-value" id="dash-invested">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Current Portfolio Value</div>
-              <div class="card-value" id="dash-current">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Unrealized P&L</div>
-              <div class="card-value" id="dash-pnl">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Today's Change</div>
-              <div class="card-value" id="dash-today-change">—</div>
-            </div>
-            <div class="card">
-              <div class="card-label">XIRR (Overall)</div>
-              <div class="card-value" id="dash-xirr">—</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Portfolio Health Score</div>
-              <div class="card-value" id="dash-health-score">—</div>
-              <div class="card-sub">out of 100</div>
-            </div>
-          </div>
-
-          <div class="quick-actions">
-            <button class="qa-btn" id="qa-add-investment-dash">
-              <i data-lucide="trending-up"></i> Add Investment
-            </button>
-            <button class="qa-btn" id="qa-add-goal">
-              <i data-lucide="target"></i> Add Goal
-            </button>
-            <button class="qa-btn" id="qa-import">
-              <i data-lucide="upload"></i> Import Zerodha
-            </button>
-          </div>
-
-          <div class="page-header" style="margin-top:1.5rem">
-            <h3 style="font-size:1rem">Portfolio Performance</h3>
-            <div class="cashflow-filter" id="perf-range-filter">
-              <button class="filter-btn" data-range="Today">Today</button>
-              <button class="filter-btn" data-range="1W">1W</button>
-              <button class="filter-btn active" data-range="1M">1M</button>
-              <button class="filter-btn" data-range="3M">3M</button>
-              <button class="filter-btn" data-range="6M">6M</button>
-              <button class="filter-btn" data-range="1Y">1Y</button>
-              <button class="filter-btn" data-range="3Y">3Y</button>
-              <button class="filter-btn" data-range="All">All</button>
-            </div>
-          </div>
-          <div class="chart-card">
-            <canvas id="chart-portfolio-performance"></canvas>
-          </div>
-          <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app — historical market prices aren't backfilled.</div>
-
-          <div class="charts-row" style="margin-top:1.5rem">
-            <div class="chart-card">
-              <div class="chart-title">Quick Summary — Asset Allocation</div>
-              <canvas id="chart-quick-summary"></canvas>
-            </div>
-            <div class="chart-card">
-              <div class="chart-title">Breakdown</div>
-              <div id="quick-summary-list" class="qs-list"></div>
-            </div>
-          </div>
-
-          <div class="section-title" style="margin-top:1.5rem">Upcoming Reminders</div>
-          <div id="reminders-list" class="reminders-list"></div>
-
-          <details class="settings-card" style="margin-top:1.5rem">
-            <summary>
-              <div class="settings-card-icon"><i data-lucide="landmark"></i></div>
-              <div class="settings-card-text">
-                <span class="settings-card-title">Manage Cash, Gold & Other Assets</span>
-                <span class="settings-card-sub">Feeds into Net Worth &amp; Quick Summary above</span>
-              </div>
-              <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-            </summary>
-            <div class="settings-card-body">
-              <div class="cards-grid" style="margin-bottom:1rem">
-                <div class="card">
-                  <div class="card-label">Total Other Assets</div>
-                  <div class="card-value positive" id="wealth-assets">₹0</div>
-                </div>
-                <div class="card">
-                  <div class="card-label">Total Liabilities</div>
-                  <div class="card-value negative" id="wealth-liabilities">₹0</div>
-                </div>
-              </div>
-              <span class="hidden" id="wealth-networth"></span>
-              <div class="section-title">Assets (Cash, Gold/Jewelry, Real Estate, etc.)</div>
-              <button class="btn btn-primary btn-sm" id="btn-add-asset" style="margin:0.5rem 0">
-                <i data-lucide="plus"></i> Add Asset
-              </button>
-              <div id="assets-table-container"></div>
-              <div class="section-title" style="margin-top:1.5rem">Liabilities</div>
-              <button class="btn btn-primary btn-sm" id="btn-add-liab" style="margin:0.5rem 0">
-                <i data-lucide="plus"></i> Add Liability
-              </button>
-              <div id="liabilities-table-container"></div>
-            </div>
-          </details>
-        </section>
-
-        <!-- PORTFOLIO PAGE -->
-        <section id="page-portfolio" class="page hidden">
-          <div class="page-header"><h2>Portfolio</h2></div>
-
-          <div class="cards-grid">
-            <div class="card">
-              <div class="card-label">Total Invested</div>
-              <div class="card-value" id="pf-invested">₹0</div>
-            </div>
-            <div class="card card-hero">
-              <div class="card-label">Current Value</div>
-              <div class="card-value" id="pf-current">₹0</div>
-              <div class="card-sub" id="pf-return-pct">0%</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Total Gain</div>
-              <div class="card-value" id="pf-gain">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Absolute Return</div>
-              <div class="card-value" id="pf-abs-return">0%</div>
-            </div>
-          </div>
-
-          <div class="page-header" style="margin-top:1.5rem">
-            <h3 style="font-size:1rem">Value Trend by Asset Class</h3>
-          </div>
-          <div class="chart-card">
-            <canvas id="chart-portfolio-value-trend"></canvas>
-          </div>
-          <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app.</div>
-
-          <div class="charts-row" style="margin-top:1.5rem">
-            <div class="chart-card">
-              <div class="chart-title">Sector Allocation</div>
-              <canvas id="chart-sector-alloc"></canvas>
-            </div>
-            <div class="chart-card">
-              <div class="chart-title">Broker Allocation</div>
-              <canvas id="chart-broker-alloc"></canvas>
-            </div>
-          </div>
-
-          <div class="section-title" style="margin-top:1.5rem">All Holdings</div>
-          <div id="pf-holdings-table-container"></div>
-        </section>
-
-        <section id="page-investments" class="page hidden">
-          <div class="page-header"><h2>Investments</h2>
-            <button class="btn btn-primary btn-sm" id="btn-add-investment">
-              <i data-lucide="plus"></i> Add
-            </button>
-          </div>
-          <div class="filter-bar">
-            <label class="muted" style="font-size:0.8rem">Realized P&amp;L for:</label>
-            <select id="inv-fy-filter" class="input-sm">
-              <option value="all">All Time</option>
-            </select>
-            <span class="muted" style="font-size:0.78rem">or custom range:</span>
-            <input type="date" id="inv-date-from" class="input-sm" />
-            <span class="muted">to</span>
-            <input type="date" id="inv-date-to" class="input-sm" />
-            <button class="btn btn-outline btn-sm" id="btn-apply-date-filter">Apply</button>
-            <button class="btn btn-ghost btn-sm" id="btn-clear-date-filter">Clear</button>
-          </div>
-          <div class="cards-grid">
-            <div class="card">
-              <div class="card-label">Total Invested</div>
-              <div class="card-value" id="inv-total-invested">₹0</div>
-            </div>
-            <div class="card card-hero">
-              <div class="card-label">Current Value</div>
-              <div class="card-value" id="inv-total-value">₹0</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Realized P&amp;L</div>
-              <div class="card-value" id="inv-realized">₹0</div>
-              <div class="card-sub muted" id="inv-realized-note">From sold holdings</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Unrealized P&amp;L</div>
-              <div class="card-value" id="inv-unrealized">₹0</div>
-              <div class="card-sub muted" id="inv-unrealized-note">Open holdings</div>
-            </div>
-          </div>
-          <div class="charts-row">
-            <div class="chart-card">
-              <div class="chart-title">Asset Allocation</div>
-              <canvas id="chart-inv-alloc"></canvas>
-            </div>
-            <div class="chart-card">
-              <div class="chart-title">Money Flow — Invested vs Sold</div>
-              <canvas id="chart-portfolio-growth"></canvas>
-            </div>
-          </div>
-          <div class="tabs" id="inv-tabs">
-            <button class="tab active" data-tab="equity">Equity</button>
-            <button class="tab" data-tab="mutual-funds">Mutual Funds</button>
-            <button class="tab" data-tab="commodity">Commodity</button>
-            <button class="tab" data-tab="fd">FD</button>
-          </div>
-          <div id="inv-table-container" class="tab-content active"></div>
-        </section>
-
-        <!-- TAX PAGE -->
-        <section id="page-tax" class="page hidden">
-          <div class="page-header"><h2>Income Tax Calculator</h2></div>
-          <div class="tax-layout">
-            <div class="tax-form-panel">
-              <div class="card">
-                <div class="form-row">
-                  <label>Financial Year</label>
-                  <select id="tax-fy" class="input">
-                    <option value="2024-25">2024–25</option>
-                    <option value="2025-26" selected>2025–26</option>
-                    <option value="2026-27">2026–27</option>
-                  </select>
-                </div>
-                <div class="form-row">
-                  <label>Tax Regime</label>
-                  <div class="radio-group">
-                    <label><input type="radio" name="regime" value="old" /> Old Regime</label>
-                    <label><input type="radio" name="regime" value="new" checked /> New Regime</label>
-                    <label><input type="radio" name="regime" value="compare" /> Compare Both</label>
-                  </div>
-                </div>
-                <div class="form-row">
-                  <label>Age</label>
-                  <input type="number" id="tax-age" class="input" value="30" />
-                </div>
-                <div class="form-row">
-                  <label>Annual Salary (₹)</label>
-                  <input type="number" id="tax-salary" class="input" placeholder="0" />
-                </div>
-                <div class="form-row">
-                  <label>Business Income (₹)</label>
-                  <input type="number" id="tax-business" class="input" placeholder="0" />
-                </div>
-                <div class="form-row">
-                  <label>Other Capital Gains (₹) <span class="muted" style="font-weight:400">— for assets NOT tracked in Investments</span></label>
-                  <input type="number" id="tax-capgains" class="input" placeholder="0" />
-                </div>
-                <div class="form-row">
-                  <label>Other Income (₹)</label>
-                  <input type="number" id="tax-other-income" class="input" placeholder="0" />
-                </div>
-                <div id="old-regime-fields">
-                  <div class="section-title small">Deductions</div>
-                  <div class="form-row">
-                    <label>80C (₹)</label>
-                    <input type="number" id="tax-80c" class="input" placeholder="Max 1,50,000" />
-                  </div>
-                  <div class="form-row">
-                    <label>80D – Health Insurance (₹)</label>
-                    <input type="number" id="tax-80d" class="input" placeholder="0" />
-                  </div>
-                  <div class="form-row">
-                    <label>HRA (₹)</label>
-                    <input type="number" id="tax-hra" class="input" placeholder="0" />
-                  </div>
-                  <div class="form-row">
-                    <label>Home Loan Interest (₹)</label>
-                    <input type="number" id="tax-homeloan" class="input" placeholder="Max 2,00,000" />
-                  </div>
-                  <div class="form-row">
-                    <label>Other Deductions (₹)</label>
-                    <input type="number" id="tax-other-ded" class="input" placeholder="0" />
-                  </div>
-                </div>
-                <button class="btn btn-primary" id="btn-calc-tax" style="width:100%;margin-top:1rem">
-                  Calculate Tax
-                </button>
-              </div>
-              <div class="card" style="margin-top:1rem">
-                <div class="section-title small">Capital Gains — auto-computed from Investments</div>
-                <div id="tax-capgains-preview"></div>
-              </div>
-            </div>
-            <div class="tax-result-panel" id="tax-result-panel">
-              <div class="card tax-result-placeholder">
-                <i data-lucide="calculator"></i>
-                <p>Fill in your details and click Calculate</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- GOALS PAGE -->
-        <section id="page-goals" class="page hidden">
-          <div class="page-header">
-            <h2>Goals</h2>
-            <button class="btn btn-primary btn-sm" id="btn-add-goal-page">
-              <i data-lucide="plus"></i> Add Goal
-            </button>
-          </div>
-          <div id="goals-grid" class="goals-grid"></div>
-        </section>
-
-        <!-- SETTINGS PAGE -->
-        <section id="page-settings" class="page hidden">
-          <div class="page-header"><h2>Settings & Customization</h2></div>
-          <div class="settings-grid">
-
-            <details class="settings-card">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="user"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Profile</span>
-                  <span class="settings-card-sub">Name, occupation, risk profile</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <div id="profile-form"></div>
-                <button class="btn btn-primary btn-sm" id="btn-save-profile">Save Profile</button>
-              </div>
-            </details>
-
-            <details class="settings-card">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="palette"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Appearance</span>
-                  <span class="settings-card-sub">Theme color, Light/Dark, app icon</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <div class="form-row-inline" style="align-items:center">
-                  <div class="form-row">
-                    <label>Theme Color</label>
-                    <div class="color-wheel-row">
-                      <input type="color" id="theme-color-wheel" value="#5a6e3a" />
-                      <span class="muted" style="font-size:0.78rem">Pick any hue — Light &amp; Dark themes are generated automatically</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-row-inline" style="margin-top:var(--sp-sm)">
-                  <button class="btn btn-outline btn-sm" id="btn-theme-reset">Reset to Default Olive</button>
-                </div>
-                <div class="form-row" style="margin-top:var(--sp-md)">
-                  <label>App Icon</label>
-                  <div class="app-icon-row">
-                    <div class="app-icon-preview" id="app-icon-preview"><i data-lucide="image"></i></div>
-                    <div>
-                      <button class="btn btn-outline btn-sm" id="btn-upload-icon">
-                        <i data-lucide="upload"></i> Upload Custom Icon
-                      </button>
-                      <button class="btn btn-ghost btn-sm" id="btn-reset-icon">Reset</button>
-                      <input type="file" id="app-icon-upload" accept="image/png,image/jpeg,image/svg+xml,image/x-icon" class="hidden" />
-                      <div class="muted" style="font-size:0.72rem;margin-top:4px">PNG/JPG/SVG, square image recommended (min 192×192)</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            <details class="settings-card">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="lock"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Security – App Lock</span>
-                  <span class="settings-card-sub">PIN protection</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <div class="form-row">
-                  <label>Enable PIN Lock</label>
-                  <label class="toggle">
-                    <input type="checkbox" id="pin-enabled-toggle" />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-                <div id="pin-setup-section" class="hidden">
-                  <div class="form-row">
-                    <label>Set 4-digit PIN</label>
-                    <input type="password" id="new-pin" class="input" maxlength="4" inputmode="numeric" />
-                  </div>
-                  <div class="form-row">
-                    <label>Confirm PIN</label>
-                    <input type="password" id="confirm-pin" class="input" maxlength="4" inputmode="numeric" />
-                  </div>
-                  <button class="btn btn-primary btn-sm" id="btn-save-pin">Save PIN</button>
-                </div>
-              </div>
-            </details>
-
-            <details class="settings-card">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="repeat"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Import / Export</span>
-                  <span class="settings-card-sub">Zerodha, Cashew CSV, backups</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <div class="import-btns">
-                  <button class="btn btn-outline" id="btn-import-zerodha">
-                    <i data-lucide="upload"></i> Import Zerodha XLS
-                  </button>
-                  <button class="btn btn-outline" id="btn-export-excel">
-                    <i data-lucide="download"></i> Export Excel
-                  </button>
-                  <button class="btn btn-outline" id="btn-export-json">
-                    <i data-lucide="download"></i> Backup JSON
-                  </button>
-                  <button class="btn btn-outline" id="btn-import-json">
-                    <i data-lucide="refresh-cw"></i> Restore Backup
-                  </button>
-                </div>
-                <input type="file" id="file-import" accept=".xls,.xlsx,.json" class="hidden" />
-              </div>
-            </details>
-
-            <details class="settings-card">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="bell"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Notifications</span>
-                  <span class="settings-card-sub">Tax &amp; portfolio review reminders</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <div class="form-row">
-                  <label>ITR filing reminder — days before 31 July deadline</label>
-                  <input type="number" id="setting-itr-days" class="input" min="1" max="180" value="60" />
-                </div>
-                <div class="form-row">
-                  <label>Monthly portfolio review reminder — day of month</label>
-                  <input type="number" id="setting-review-day" class="input" min="1" max="28" value="1" />
-                </div>
-                <button class="btn btn-primary btn-sm" id="btn-save-notifications">Save</button>
-              </div>
-            </details>
-
-            <details class="settings-card settings-card-danger">
-              <summary>
-                <div class="settings-card-icon"><i data-lucide="triangle-alert"></i></div>
-                <div class="settings-card-text">
-                  <span class="settings-card-title">Danger Zone</span>
-                  <span class="settings-card-sub">Sign out, delete all data</span>
-                </div>
-                <i data-lucide="chevron-down" class="settings-card-chevron"></i>
-              </summary>
-              <div class="settings-card-body">
-                <button class="btn btn-danger btn-sm" id="btn-sign-out">Sign Out</button>
-                <button class="btn btn-danger btn-sm" id="btn-clear-data" style="margin-left:0.5rem">Clear All Data</button>
-              </div>
-            </details>
-
-          </div>
-        </section>
-
-      </main>
-    </div>
-
-    <!-- BOTTOM NAV (mobile, iOS-style floating glass pill) -->
-    <nav class="bottom-nav" id="bottom-nav">
-      <a href="#" class="bottom-nav-item active" data-page="dashboard"><i data-lucide="layout-dashboard"></i><span>Home</span></a>
-      <a href="#" class="bottom-nav-item" data-page="portfolio"><i data-lucide="briefcase"></i><span>Portfolio</span></a>
-      <a href="#" class="bottom-nav-item" data-page="investments"><i data-lucide="trending-up"></i><span>Invest</span></a>
-      <a href="#" class="bottom-nav-item" data-page="goals"><i data-lucide="target"></i><span>Goals</span></a>
-      <a href="#" class="bottom-nav-item" data-page="tax"><i data-lucide="calculator"></i><span>Tax</span></a>
-    </nav>
-
-    <!-- FAB -->
-    <button class="fab" id="fab-add" aria-label="Add transaction">
-      <i data-lucide="plus"></i>
-    </button>
-  </div>
-
-  <!-- ===== MODALS ===== -->
-  <div id="modal-overlay" class="modal-overlay hidden">
-    <div id="modal" class="modal" role="dialog" aria-modal="true">
-      <div class="modal-header">
-        <h3 id="modal-title">Modal</h3>
-        <button class="modal-close" id="modal-close" aria-label="Close"><i data-lucide="x"></i></button>
-      </div>
-      <div id="modal-body" class="modal-body"></div>
-      <div id="modal-footer" class="modal-footer"></div>
-    </div>
-  </div>
-
-  <!-- Toast -->
-  <div id="toast-container" class="toast-container"></div>
-
-  <!-- App JS (ES modules) -->
-  <script type="module" src="js/app.js?v=20260705b"></script>
-</body>
-</html>
+// PDF download (basic print)
+window.downloadTaxPDF = () => {
+  window.print();
+};
