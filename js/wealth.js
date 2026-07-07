@@ -1,9 +1,9 @@
 // ============================================================
 // js/wealth.js – Assets, Liabilities, Net Worth
 // ============================================================
-import { saveAsset, getAssets, deleteAsset, saveLiability, getLiabilities, deleteLiability } from "./database.js?v=20260705b";
-import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal } from "./utils.js?v=20260705b";
-import { renderAssetAllocChart, renderNWTimeline } from "./charts.js?v=20260705b";
+import { saveAsset, getAssets, deleteAsset, saveLiability, getLiabilities, deleteLiability } from "./database.js?v=20260707a";
+import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal } from "./utils.js?v=20260707a";
+import { renderAssetAllocChart, renderNWTimeline } from "./charts.js?v=20260707a";
 
 let _assets = [], _liabilities = [];
 
@@ -111,7 +111,7 @@ const renderLiabilitiesTable = () => {
 };
 
 // ─── ASSET MODAL ──────────────────────────────────────────────
-const ASSET_CATEGORIES = ["Real Estate","Vehicle","Gold/Jewelry","Cash","Bank Deposit","Other","+ Add New Category"];
+const ASSET_CATEGORIES = ["Emergency Fund","Real Estate","Vehicle","Gold/Jewelry","Cash","Bank Deposit","Provident Fund (EPF/PPF)","Insurance (Cash Value)","Other","+ Add New Category"];
 
 const openAssetModal = (asset) => {
   const isEdit = !!asset;
