@@ -5,10 +5,11 @@ import {
   saveInvestment, getInvestments, deleteInvestment,
   addBuyLot, getBuyLots, deleteBuyLot,
   addSellTrade, getSellTrades, deleteSellTrade
-} from "./database.js?v=20260705b";
-import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal, pct } from "./utils.js?v=20260705b";
-import { renderInvCharts } from "./charts.js?v=20260705b";
-import { computeFIFOMatches, calcEquityCharges, calcMFCharges, calcCommodityCharges, calcGenericCharges } from "./fifo.js?v=20260705b";
+} from "./database.js?v=20260707a";
+import { formatCurrency, formatDate, todayISO, toast, openModal, closeModal, pct } from "./utils.js?v=20260707a";
+import { renderInvCharts } from "./charts.js?v=20260707a";
+import { computeFIFOMatches, calcEquityCharges, calcMFCharges, calcCommodityCharges, calcGenericCharges } from "./fifo.js?v=20260707a";
+import { getGoalsData, contributeToGoalFromPurchase } from "./goals.js?v=20260707a";
 
 export const ASSET_TYPES = ["Equity", "Mutual Fund", "Commodity", "FD"];
 
@@ -66,7 +67,7 @@ export const getAllBuys  = () => _allBuys;
 // lots first, so realized P&L is net of charges AND each match carries the
 // correct holding period (needed for STCG/LTCG). Open quantity/cost basis
 // comes from whatever buy lots remain unconsumed.
-const fifoSummaryForHolding = (inv) => {
+export const fifoSummaryForHolding = (inv) => {
   const buys = _allBuys[inv.id] || [];
   const sells = _allSells[inv.id] || [];
   const { matches, remainingBuyLots } = computeFIFOMatches(buys, sells);
@@ -204,7 +205,6 @@ export const renderInvestmentsPage = () => {
   unrEl.className = "card-value " + (agg.unrealized >= 0 ? "positive" : "negative");
 
   renderInvCharts(_investments, _allSells);
-  recordAssetClassSnapshot();
 
   renderInvTabs();
   populateFYOptions();
@@ -236,26 +236,61 @@ const renderInvTabs = () => {
   });
 };
 
-// ─── DAILY SNAPSHOT BY ASSET CLASS (for the trading-style value chart) ──
-const SNAPSHOT_TYPE_KEY = "portfolio_snapshots_by_type";
-const recordAssetClassSnapshot = () => {
-  const byType = {};
-  getAllAssetTypes().forEach(t => byType[t] = 0);
+// ─── VALUE TIMELINE BY ASSET CLASS (built from real Buy/Sell dates) ──
+// No historical market prices are available, so history is reconstructed
+// from actual cost-basis: each buy lot adds its cost on its real date;
+// each FIFO-matched sell removes the exact consumed lot's cost on the real
+// sell date. This goes back to the true first purchase date — not just
+// from whenever the app started recording — and today's point is
+// overridden with LIVE current value so the latest reading is accurate.
+export const getAssetClassCostBasisTimeline = () => {
+  const events = [];
   _investments.forEach(inv => {
-    const oQty = openQty(inv);
-    const val = (inv.currentPrice || inv.avgPrice) * oQty;
-    if (byType[inv.assetType] === undefined) byType[inv.assetType] = 0;
-    byType[inv.assetType] += val;
+    (_allBuys[inv.id] || []).forEach(b => {
+      if (b.date) events.push({ date: b.date, type: inv.assetType, amount: (b.quantity || 0) * (b.price || 0) });
+    });
+    const { matches } = computeFIFOMatches(_allBuys[inv.id] || [], _allSells[inv.id] || []);
+    matches.forEach(m => events.push({ date: m.sellDate, type: inv.assetType, amount: -(m.quantity * m.buyPrice) }));
   });
-  let snaps = {};
-  try { snaps = JSON.parse(localStorage.getItem(SNAPSHOT_TYPE_KEY)) || {}; } catch { snaps = {}; }
-  snaps[todayISO()] = byType;
-  try { localStorage.setItem(SNAPSHOT_TYPE_KEY, JSON.stringify(snaps)); } catch {}
+  if (events.length === 0) return {};
+  events.sort((a, b) => a.date.localeCompare(b.date));
+
+  const cum = {};
+  const snaps = {};
+  let idx = 0;
+  const start = new Date(events[0].date);
+  const end = new Date(todayISO());
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    while (idx < events.length && events[idx].date <= dateStr) {
+      const ev = events[idx];
+      cum[ev.type] = (cum[ev.type] || 0) + ev.amount;
+      idx++;
+    }
+    snaps[dateStr] = { ...cum };
+  }
+
+  // Override today with live current value per type (accurate "as of now" reading)
+  const liveToday = {};
+  _investments.forEach(inv => {
+    const fifo = fifoSummaryForHolding(inv);
+    liveToday[inv.assetType] = (liveToday[inv.assetType] || 0) + (inv.currentPrice || inv.avgPrice) * fifo.openQty;
+  });
+  const todayStr = todayISO();
+  if (snaps[todayStr]) snaps[todayStr] = { ...snaps[todayStr], ...liveToday };
+
   return snaps;
 };
 
-export const getAssetClassSnapshots = () => {
-  try { return JSON.parse(localStorage.getItem(SNAPSHOT_TYPE_KEY)) || {}; } catch { return {}; }
+// Total portfolio value over time (sum across asset classes) — used by the
+// Dashboard's Portfolio Performance "Current Value" line.
+export const getPortfolioCostBasisTimeline = () => {
+  const byType = getAssetClassCostBasisTimeline();
+  const total = {};
+  Object.entries(byType).forEach(([date, types]) => {
+    total[date] = Object.values(types).reduce((s, v) => s + v, 0);
+  });
+  return total;
 };
 
 // ─── INVESTMENT TABLE ─────────────────────────────────────────
@@ -460,6 +495,13 @@ const openBuyMoreModal = (inv) => {
       <label>Notes (optional)</label>
       <input type="text" id="buy-notes" class="input" placeholder="e.g. Monthly SIP" />
     </div>
+    <div class="form-row">
+      <label>Link to Goal (optional)</label>
+      <select id="buy-goal" class="input">
+        <option value="">— None —</option>
+        ${getGoalsData().map(g => `<option value="${g.id}">${g.name}</option>`).join("")}
+      </select>
+    </div>
     <div id="buy-avg-preview" style="margin-top:var(--sp-sm)"></div>
     <div class="section-title small" style="margin-top:1rem">Charges</div>
     <div id="buy-charges-fields">${chargesFieldsHTML(inv.assetType, "buy")}</div>
@@ -500,6 +542,11 @@ const openBuyMoreModal = (inv) => {
 
     await addBuyLot(inv.id, { quantity: qty, price, date, notes, charges });
     await recalcFromBuyLots(inv.id);
+
+    const goalId = document.getElementById("buy-goal")?.value;
+    if (goalId) {
+      await contributeToGoalFromPurchase(goalId, qty * price, date, `Investment: ${inv.name}`);
+    }
 
     toast("Purchase added — average buy price updated", "success");
     closeModal();
@@ -826,6 +873,16 @@ export const openInvModal = (inv) => {
       <input type="text" id="inv-m-notes" class="input" placeholder="Optional" value="${inv?.notes||""}" />
     </div>
     ${!isEdit ? `
+      <div class="form-row">
+        <label>Link to Goal (optional)</label>
+        <select id="inv-m-goal" class="input">
+          <option value="">— None —</option>
+          ${getGoalsData().map(g => `<option value="${g.id}">${g.name}</option>`).join("")}
+        </select>
+        <div class="muted" style="font-size:0.7rem;margin-top:4px">Counts this purchase amount as a contribution toward the selected goal.</div>
+      </div>
+    ` : ""}
+    ${!isEdit ? `
       <div class="section-title small" style="margin-top:1rem">Charges</div>
       <div id="inv-m-charges-fields">${chargesFieldsHTML(inv?.assetType || getAllAssetTypes()[0], "buy")}</div>
       <div id="inv-m-charges-preview"></div>
@@ -918,6 +975,11 @@ const saveInv = async (editId) => {
       } else {
         const newId = await saveInvestment(null, { ...data, quantity: qty, avgPrice: price, purchaseDate: date });
         await addBuyLot(newId, { quantity: qty, price, date, notes: data.notes, charges });
+      }
+
+      const goalId = document.getElementById("inv-m-goal")?.value;
+      if (goalId) {
+        await contributeToGoalFromPurchase(goalId, qty * price, date, `Investment: ${data.name}`);
       }
     }
 
