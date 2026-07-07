@@ -542,6 +542,37 @@ body {
 .charges-grid .form-row { margin-bottom: 0; }
 
 /* ============================
+   CHANGE LOG
+   ============================ */
+.changelog-entry {
+  border-left: 2px solid var(--border);
+  padding: 0 0 var(--sp-lg) var(--sp-md);
+  margin-left: 4px;
+  position: relative;
+}
+.changelog-entry::before {
+  content: "";
+  position: absolute;
+  left: -5px; top: 4px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--c-primary);
+}
+.changelog-entry:last-child { padding-bottom: 0; }
+.changelog-entry-header {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.changelog-version {
+  background: var(--c-primary-light); color: var(--c-primary);
+  font-weight: 700; font-size: 0.7rem; padding: 2px 8px; border-radius: 999px;
+}
+.changelog-title { font-weight: 600; font-size: 0.88rem; }
+.changelog-date { color: var(--t-muted); font-size: 0.72rem; margin-left: auto; }
+.changelog-changes { margin: 0; padding-left: 1.1rem; }
+.changelog-changes li { font-size: 0.82rem; color: var(--t-secondary); margin-bottom: 4px; line-height: 1.4; }
+
+/* ============================
    TRANSACTIONS LIST
    ============================ */
 .txn-list { display: flex; flex-direction: column; gap: var(--sp-xs); }
