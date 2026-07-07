@@ -1,24 +1,59 @@
 // ============================================================
 // js/export.js – Excel / JSON Export & Backup
 // ============================================================
-import { exportAllData, importAllData, getInvestments } from "./database.js?v=20260705b";
-import { toast } from "./utils.js?v=20260705b";
+import { exportAllData, importAllData, getInvestments, getBuyLots, getSellTrades } from "./database.js?v=20260707a";
+import { toast } from "./utils.js?v=20260707a";
 
-// ─── EXPORT TO EXCEL ──────────────────────────────────────────
+// ─── EXPORT TO EXCEL (transaction-level: one row per Buy or Sell) ──
 export const exportToExcel = async () => {
   try {
     const invs = await getInvestments();
+    const rows = [];
+
+    for (const inv of invs) {
+      const [buys, sells] = await Promise.all([getBuyLots(inv.id), getSellTrades(inv.id)]);
+
+      buys.forEach(b => rows.push({
+        "Asset Name": inv.name,
+        "Asset Type": inv.assetType,
+        "Buy/Sell": "Buy",
+        "Qty": b.quantity,
+        "Buy Price": b.price,
+        "Current Price": inv.currentPrice,
+        "Sell Price": "",
+        "Buy Date": b.date,
+        "Sell Date": "",
+        "Broker": inv.broker,
+        "Sector": inv.sector,
+        "Exit Load (MF Sell)": "",
+        "Total Charges": b.charges?.total || 0,
+      }));
+
+      sells.forEach(s => rows.push({
+        "Asset Name": inv.name,
+        "Asset Type": inv.assetType,
+        "Buy/Sell": "Sell",
+        "Qty": s.quantity,
+        "Buy Price": inv.avgPrice,
+        "Current Price": inv.currentPrice,
+        "Sell Price": s.sellPrice,
+        "Buy Date": "",
+        "Sell Date": s.sellDate,
+        "Broker": inv.broker,
+        "Sector": inv.sector,
+        "Exit Load (MF Sell)": s.charges?.exitLoad || "",
+        "Total Charges": s.charges?.total || 0,
+      }));
+    }
+
+    if (rows.length === 0) { toast("No buy/sell transactions to export yet", "warning"); return; }
 
     const wb = XLSX.utils.book_new();
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, sheet, "Transactions");
 
-    const invSheet = XLSX.utils.json_to_sheet(invs.map(i => ({
-      Name: i.name, Type: i.assetType, Quantity: i.quantity,
-      AvgPrice: i.avgPrice, CurrentPrice: i.currentPrice, Broker: i.broker, Sector: i.sector
-    })));
-    XLSX.utils.book_append_sheet(wb, invSheet, "Investments");
-
-    XLSX.writeFile(wb, `CapitalOne_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
-    toast("Excel file downloaded", "success");
+    XLSX.writeFile(wb, `CapitalOne_Transactions_${new Date().toISOString().slice(0,10)}.xlsx`);
+    toast(`Exported ${rows.length} transactions`, "success");
   } catch (err) {
     console.error(err);
     toast("Export failed", "error");
