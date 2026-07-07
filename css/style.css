@@ -573,6 +573,28 @@ body {
 .changelog-changes li { font-size: 0.82rem; color: var(--t-secondary); margin-bottom: 4px; line-height: 1.4; }
 
 /* ============================
+   HEALTH SCORE POPUP
+   ============================ */
+.card-clickable { cursor: pointer; transition: box-shadow var(--trans), transform var(--trans); }
+.card-clickable:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+
+.health-criterion {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+  margin-bottom: var(--sp-sm);
+}
+.health-criterion-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.health-criterion-label { font-weight: 600; font-size: 0.85rem; }
+.health-criterion-pts { margin-left: auto; font-size: 0.75rem; color: var(--t-muted); font-weight: 600; }
+.health-criterion-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.health-badge-good { background: rgba(45,122,79,0.14); color: var(--c-positive); }
+.health-badge-ok   { background: rgba(184,150,46,0.16); color: #b8962e; }
+.health-badge-bad  { background: rgba(192,57,43,0.14); color: var(--c-negative); }
+.health-criterion-detail { font-size: 0.76rem; margin: 4px 0 2px; }
+.health-criterion-suggestion { font-size: 0.8rem; color: var(--t-secondary); }
+
+/* ============================
    TRANSACTIONS LIST
    ============================ */
 .txn-list { display: flex; flex-direction: column; gap: var(--sp-xs); }
@@ -617,7 +639,19 @@ body {
   border-radius: var(--r-lg);
   padding: var(--sp-lg);
   box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  overflow: hidden;
 }
+.chart-card canvas {
+  flex: 1;
+  min-height: 0;
+  max-width: 100% !important;
+  width: 100% !important;
+}
+.chart-card-pie { height: 260px; }
+.chart-card-pie canvas { max-width: 260px !important; margin: 0 auto; }
 .chart-title {
   font-size: 0.85rem; font-weight: 600;
   color: var(--t-muted); margin-bottom: var(--sp-md);
@@ -1323,6 +1357,9 @@ select.input, select.input-sm { appearance: none; cursor: pointer; }
   .page-content { padding: var(--sp-md); padding-bottom: 96px; }
   .search-results { left: 1rem; right: 1rem; width: auto; }
   .charts-row { grid-template-columns: 1fr; }
+  .chart-card { height: 240px; padding: var(--sp-md); }
+  .chart-card-pie { height: 220px; }
+  .chart-card .chart-title { font-size: 0.75rem; margin-bottom: 8px; }
   .cards-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .card-value { font-size: 1.35rem; }
   .fab { bottom: 84px; right: var(--sp-lg); }
