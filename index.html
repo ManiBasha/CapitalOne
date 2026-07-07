@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CapitalOne</title>
+  <title>CapitalOne – Wealth & Investment Dashboard</title>
   <meta name="description" content="Personal wealth & investment dashboard: portfolio tracking, net worth, goals, and Indian income tax planning" />
   <link rel="icon" id="favicon-link" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%235a6e3a%22/><text x=%2250%22 y=%2266%22 font-size=%2255%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>C</text></svg>" />
 
@@ -33,7 +33,7 @@
       <div class="auth-logo">
         <div class="logo-mark">C</div>
         <h1 class="auth-title">CapitalOne</h1>
-        <p class="auth-subtitle">Your complete investment & tax dashboard</p>
+        <p class="auth-subtitle">Your complete finance dashboard</p>
       </div>
       <div class="auth-actions">
         <button id="btn-google-login" class="btn btn-primary btn-large">
@@ -44,7 +44,7 @@
           Try without account
         </button>
       </div>
-      <p class="auth-note">Your data is encrypted and stored securely</p>
+      <p class="auth-note">Your data is encrypted and stored securely in Firebase</p>
     </div>
   </div>
 
@@ -207,7 +207,7 @@
               <div class="card-value" id="dash-xirr">—</div>
             </div>
             <div class="card">
-              <div class="card-label">Health Score</div>
+              <div class="card-label">Portfolio Health Score</div>
               <div class="card-value" id="dash-health-score">—</div>
               <div class="card-sub">out of 100</div>
             </div>
@@ -241,11 +241,11 @@
           <div class="chart-card">
             <canvas id="chart-portfolio-performance"></canvas>
           </div>
-          <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app.</div>
+          <div class="muted" style="font-size:0.75rem;margin-top:6px">Builds up day-by-day as you use the app — historical market prices aren't backfilled.</div>
 
           <div class="charts-row" style="margin-top:1.5rem">
             <div class="chart-card">
-              <div class="chart-title">Asset Allocation</div>
+              <div class="chart-title">Quick Summary — Asset Allocation</div>
               <canvas id="chart-quick-summary"></canvas>
             </div>
             <div class="chart-card">
@@ -261,8 +261,8 @@
             <summary>
               <div class="settings-card-icon"><i data-lucide="landmark"></i></div>
               <div class="settings-card-text">
-                <span class="settings-card-title">Manage Cash, Gold & All Other Assets</span>
-                <span class="settings-card-sub">Feeds into Net Worth &amp; Quick Summary</span>
+                <span class="settings-card-title">Manage Cash, Gold & Other Assets</span>
+                <span class="settings-card-sub">Feeds into Net Worth &amp; Quick Summary above</span>
               </div>
               <i data-lucide="chevron-down" class="settings-card-chevron"></i>
             </summary>
@@ -307,7 +307,7 @@
               <div class="card-sub" id="pf-return-pct">0%</div>
             </div>
             <div class="card">
-              <div class="card-label">Total Capital Gain</div>
+              <div class="card-label">Total Gain</div>
               <div class="card-value" id="pf-gain">₹0</div>
             </div>
             <div class="card">
@@ -341,9 +341,16 @@
 
         <section id="page-investments" class="page hidden">
           <div class="page-header"><h2>Investments</h2>
+            <button class="btn btn-primary btn-sm" id="btn-add-investment">
+              <i data-lucide="plus"></i> Add
+            </button>
           </div>
           <div class="filter-bar">
             <label class="muted" style="font-size:0.8rem">Realized P&amp;L for:</label>
+            <select id="inv-fy-filter" class="input-sm">
+              <option value="all">All Time</option>
+            </select>
+            <span class="muted" style="font-size:0.78rem">or custom range:</span>
             <input type="date" id="inv-date-from" class="input-sm" />
             <span class="muted">to</span>
             <input type="date" id="inv-date-to" class="input-sm" />
@@ -376,7 +383,7 @@
               <canvas id="chart-inv-alloc"></canvas>
             </div>
             <div class="chart-card">
-              <div class="chart-title">Money Flow — Invested vs Sold per Month</div>
+              <div class="chart-title">Money Flow — Invested vs Sold</div>
               <canvas id="chart-portfolio-growth"></canvas>
             </div>
           </div>
@@ -424,7 +431,7 @@
                   <input type="number" id="tax-business" class="input" placeholder="0" />
                 </div>
                 <div class="form-row">
-                  <label>Capital Gains (₹)</label>
+                  <label>Other Capital Gains (₹) <span class="muted" style="font-weight:400">— for assets NOT tracked in Investments</span></label>
                   <input type="number" id="tax-capgains" class="input" placeholder="0" />
                 </div>
                 <div class="form-row">
@@ -457,6 +464,10 @@
                 <button class="btn btn-primary" id="btn-calc-tax" style="width:100%;margin-top:1rem">
                   Calculate Tax
                 </button>
+              </div>
+              <div class="card" style="margin-top:1rem">
+                <div class="section-title small">Capital Gains — auto-computed from Investments</div>
+                <div id="tax-capgains-preview"></div>
               </div>
             </div>
             <div class="tax-result-panel" id="tax-result-panel">
@@ -504,7 +515,7 @@
                 <div class="settings-card-icon"><i data-lucide="palette"></i></div>
                 <div class="settings-card-text">
                   <span class="settings-card-title">Appearance</span>
-                  <span class="settings-card-sub">Color Theme, app icon</span>
+                  <span class="settings-card-sub">Theme color, Light/Dark, app icon</span>
                 </div>
                 <i data-lucide="chevron-down" class="settings-card-chevron"></i>
               </summary>
@@ -519,7 +530,7 @@
                   </div>
                 </div>
                 <div class="form-row-inline" style="margin-top:var(--sp-sm)">
-                  <button class="btn btn-outline btn-sm" id="btn-theme-reset">Reset to Olive</button>
+                  <button class="btn btn-outline btn-sm" id="btn-theme-reset">Reset to Default Olive</button>
                 </div>
                 <div class="form-row" style="margin-top:var(--sp-md)">
                   <label>App Icon</label>
@@ -574,14 +585,14 @@
                 <div class="settings-card-icon"><i data-lucide="repeat"></i></div>
                 <div class="settings-card-text">
                   <span class="settings-card-title">Import / Export</span>
-                  <span class="settings-card-sub">Zerodha &amp; backups</span>
+                  <span class="settings-card-sub">Zerodha, Cashew CSV, backups</span>
                 </div>
                 <i data-lucide="chevron-down" class="settings-card-chevron"></i>
               </summary>
               <div class="settings-card-body">
                 <div class="import-btns">
                   <button class="btn btn-outline" id="btn-import-zerodha">
-                    <i data-lucide="upload"></i> Import Zerodha
+                    <i data-lucide="upload"></i> Import Zerodha XLS
                   </button>
                   <button class="btn btn-outline" id="btn-export-excel">
                     <i data-lucide="download"></i> Export Excel
@@ -608,11 +619,11 @@
               </summary>
               <div class="settings-card-body">
                 <div class="form-row">
-                  <label>ITR filing reminder _ days before 31 July deadline</label>
+                  <label>ITR filing reminder — days before 31 July deadline</label>
                   <input type="number" id="setting-itr-days" class="input" min="1" max="180" value="60" />
                 </div>
                 <div class="form-row">
-                  <label>Monthly portfolio review reminder _ day of month</label>
+                  <label>Monthly portfolio review reminder — day of month</label>
                   <input type="number" id="setting-review-day" class="input" min="1" max="28" value="1" />
                 </div>
                 <button class="btn btn-primary btn-sm" id="btn-save-notifications">Save</button>
